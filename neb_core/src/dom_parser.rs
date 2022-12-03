@@ -4,6 +4,7 @@ use std::{
     io::{BufReader, Read},
 };
 
+use neb_errors::{DocumentError, DocumentErrorType};
 use xml::{reader::XmlEvent, EventReader};
 
 use crate::{tree_display::TreeDisplay, Rf};
@@ -15,7 +16,27 @@ fn indent(size: usize) -> String {
         .fold(String::with_capacity(size * INDENT.len()), |r, s| r + s)
 }
 
-pub struct Document {}
+pub struct Document {
+    errors: Vec<DocumentError>,
+
+    head: Rf<Node>,
+
+    body: Rf<Node>,
+}
+
+impl Document {
+    pub fn get_errors(&self) -> &[DocumentError] {
+        &self.errors
+    }
+
+    pub fn get_head(&self) -> Rf<Node> {
+        self.head.clone()
+    }
+    
+    pub fn get_body(&self) -> Rf<Node> {
+        self.body.clone()
+    }
+}
 
 /// The node type is a specific type of element
 /// The most common element is the `Div` which is for general use case
@@ -50,18 +71,21 @@ impl NodeType {
             _ => None,
         }
     }
+
+    pub fn as_str(&self) -> &'static str {
+        use NodeType::*;
+        match self {
+            Div => "div",
+            Head => "head",
+            Body => "body",
+            Html => "html",
+        }
+    }
 }
 
 impl Display for NodeType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        use NodeType::*;
-
-        match self {
-            Div => write!(f, "div"),
-            Head => write!(f, "head"),
-            Body => write!(f, "body"),
-            Html => write!(f, "html"),
-        }
+        write!(f, "{}", self.as_str())
     }
 }
 
@@ -86,6 +110,13 @@ impl Node {
     pub fn add_child(&mut self, node: impl Into<Rf<Node>>) {
         self.children.push(node.into())
     }
+
+    pub fn find_child_by_element_name(&self, name: &str) -> Option<Rf<Node>> {
+        self.children
+            .iter()
+            .find(|f| f.borrow().as_ref().ty.as_str() == name)
+            .map(|f| f.clone())
+    }
 }
 
 impl Display for Node {
@@ -101,14 +132,14 @@ impl TreeDisplay for Node {
 
     fn child_at(&self, index: usize) -> Option<Rf<dyn TreeDisplay>> {
         if index < self.children.len() {
-            Some(Rf(self.children[index].clone()))
+            Some(Rf(self.children[index].0.clone()))
         } else {
             None
         }
     }
 }
 
-pub fn parse_from_stream<R>(stream: BufReader<R>)
+pub fn parse_from_stream<R>(stream: BufReader<R>) -> Document
 where
     R: Read,
 {
@@ -116,6 +147,7 @@ where
 
     let mut depth = 0;
     let mut nodes: HashMap<usize, Node> = HashMap::new();
+    let mut errors: Vec<DocumentError> = Vec::new();
 
     for e in event_reader {
         match e {
@@ -154,5 +186,40 @@ where
         }
     }
 
-    println!("Nodes:\n{}", nodes.get(&0).unwrap().format());
+    let (head, body) = if let Some(html) = nodes.get(&0) {
+        let head = if let Some(head) = html.find_child_by_element_name("head") {
+            head
+        } else {
+            errors.push(DocumentError::new(
+                DocumentErrorType::ExpectedTag("head".into()),
+                neb_errors::ErrorKind::Warning,
+            ));
+            Rf::new(Node::new(NodeType::Head))
+        };
+
+        let body = if let Some(body) = html.find_child_by_element_name("body") {
+            body
+        } else {
+            errors.push(DocumentError::new(
+                DocumentErrorType::ExpectedTag("body".into()),
+                neb_errors::ErrorKind::Warning,
+            ));
+            Rf::new(Node::new(NodeType::Head))
+        };
+
+        (head, body)
+    } else {
+        errors.push(DocumentError::new(
+            DocumentErrorType::ExpectedTag("html".into()),
+            neb_errors::ErrorKind::Error,
+        ));
+        (
+            Rf::new(Node::new(NodeType::Head)),
+            Rf::new(Node::new(NodeType::Body)),
+        )
+    };
+
+    Document { body, head, errors }
+
+    // println!("Nodes:\n{}", .unwrap().format());
 }

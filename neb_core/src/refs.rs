@@ -7,8 +7,13 @@ use std::{
 
 use crate::tree_display::TreeDisplay;
 
-#[derive(Clone)]
 pub struct Rf<T: ?Sized>(pub RefCell<Rc<T>>);
+
+impl<T: ?Sized> Clone for Rf<T> {
+    fn clone(&self) -> Self {
+        Self(self.0.clone())
+    }
+}
 
 // impl<T: Display> Display for Rf<T> {
 //     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

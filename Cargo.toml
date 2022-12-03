@@ -1,2 +1,3 @@
 [workspace]
-members = ["browser", "neb_core"]
+members = ["browser", "neb_core", "neb_errors", "neb_graphics"]
+resolver = "2"

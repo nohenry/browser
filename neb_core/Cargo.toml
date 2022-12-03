@@ -8,3 +8,6 @@ edition = "2021"
 [dependencies]
 swc_ecma_parser = "0.123.3"
 xml-rs = "0.8.4"
+
+neb_errors = { path = "../neb_errors" }
+neb_graphics = { path = "../neb_graphics" }
