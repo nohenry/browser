@@ -1,0 +1,2 @@
+[workspace]
+members = ["browser", "neb_core"]
