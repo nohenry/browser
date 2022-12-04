@@ -1,16 +1,21 @@
-use piet_scene::{
-    kurbo::{Affine, Point, Rect},
-    Brush, Color, Scene, SceneBuilder,
-};
+use drawing_context::DrawingContext;
+use piet_scene::{kurbo::Size, Scene, SceneBuilder};
 use piet_wgsl::{util::RenderContext, Renderer, Result};
+use simple_text::SimpleText;
 use winit::{
     dpi::LogicalSize,
-    event::{ElementState, Event, VirtualKeyCode, WindowEvent},
+    event::{Event, WindowEvent},
     event_loop::{ControlFlow, EventLoop},
     window::WindowBuilder,
 };
 
-pub async fn start_graphics_thread() -> Result<()> {
+pub use piet_scene;
+
+pub mod simple_text;
+
+pub mod drawing_context;
+
+pub async fn start_graphics_thread(draw: impl Fn(&mut DrawingContext) + 'static) -> Result<()> {
     let event_loop = EventLoop::new();
 
     let window = WindowBuilder::new()
@@ -26,7 +31,6 @@ pub async fn start_graphics_thread() -> Result<()> {
 
     // let mut simple_text = simple_text::SimpleText::new();
 
-    let mut current_frame = 0usize;
     let mut scene = Scene::default();
 
     event_loop.run(move |event, _, control_flow| match event {
@@ -35,7 +39,6 @@ pub async fn start_graphics_thread() -> Result<()> {
             window_id,
         } if window_id == window.id() => match event {
             WindowEvent::CloseRequested => *control_flow = ControlFlow::Exit,
-            WindowEvent::KeyboardInput { input, .. } => {}
             WindowEvent::Resized(size) => {
                 render_cx.resize_surface(&mut surface, size.width, size.height);
                 window.request_redraw();
@@ -46,24 +49,18 @@ pub async fn start_graphics_thread() -> Result<()> {
             window.request_redraw();
         }
         Event::RedrawRequested(_) => {
-            current_frame += 1;
-
             let width = surface.config.width;
             let height = surface.config.height;
 
-            let mut builder = SceneBuilder::for_scene(&mut scene);
+            let mut dctx = DrawingContext {
+                builder: SceneBuilder::for_scene(&mut scene),
+                text: SimpleText::new(),
+                size: Size::new(width as _, height as _),
+            };
 
-            // Fill background color
-            let bg_rect = Rect::from_origin_size(Point::new(0.0, 0.0), (width as _, height as _));
-            builder.fill(
-                piet_scene::Fill::NonZero,
-                Affine::IDENTITY,
-                &Brush::Solid(Color::rgb8(128, 128, 128)),
-                None,
-                &bg_rect,
-            );
+            draw(&mut dctx);
 
-            builder.finish();
+            dctx.builder.finish();
             let surface_texture = surface
                 .surface
                 .get_current_texture()
@@ -80,6 +77,7 @@ pub async fn start_graphics_thread() -> Result<()> {
                 .expect("failed to render to surface");
             surface_texture.present();
             render_cx.device.poll(wgpu::Maintain::Wait);
+            // render_cx.device.poll(wgpu::MaintainBase::Poll);
         }
         _ => {}
     });
@@ -87,7 +85,6 @@ pub async fn start_graphics_thread() -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
 
     #[test]
     fn it_works() {}

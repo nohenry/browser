@@ -8,6 +8,10 @@ edition = "2021"
 [dependencies]
 swc_ecma_parser = "0.123.3"
 xml-rs = "0.8.4"
+lazy_static = "*"
+idgenerator = "2.0.0"
+rand = "0.8.5"
+cssparser = "0.29.6"
 
 neb_errors = { path = "../neb_errors" }
 neb_graphics = { path = "../neb_graphics" }

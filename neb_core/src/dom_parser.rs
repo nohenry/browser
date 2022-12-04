@@ -1,15 +1,19 @@
 use std::{
     collections::HashMap,
-    fmt::Display,
     io::{BufReader, Read},
 };
 
 use neb_errors::{DocumentError, DocumentErrorType};
+use neb_graphics::drawing_context::DrawingContext;
 use xml::{reader::XmlEvent, EventReader};
 
-use crate::{tree_display::TreeDisplay, Rf};
+use crate::{
+    is_node,
+    node::{Node, NodeType},
+    Rf, tree_display::TreeDisplay,
+};
 
-fn indent(size: usize) -> String {
+pub fn indent(size: usize) -> String {
     const INDENT: &'static str = "    ";
     (0..size)
         .map(|_| INDENT)
@@ -32,110 +36,16 @@ impl Document {
     pub fn get_head(&self) -> Rf<Node> {
         self.head.clone()
     }
-    
+
     pub fn get_body(&self) -> Rf<Node> {
         self.body.clone()
     }
 }
 
-/// The node type is a specific type of element
-/// The most common element is the `Div` which is for general use case
-#[derive(Debug)]
-pub enum NodeType {
-    /// A general element type
-    Div,
-
-    Head,
-
-    Body,
-
-    Html,
-}
-
-impl NodeType {
-    pub fn try_node(element: &str) -> Option<NodeType> {
-        use NodeType::*;
-
-        match element.to_lowercase().as_str() {
-            "div" => Some(Div),
-            "html" => Some(Html),
-            "head" => Some(Head),
-            "body" => Some(Body),
-            _ => None,
-        }
-    }
-
-    pub fn try_node_poss(element: Option<&str>) -> Option<NodeType> {
-        match element {
-            Some(node) => NodeType::try_node(node),
-            _ => None,
-        }
-    }
-
-    pub fn as_str(&self) -> &'static str {
-        use NodeType::*;
-        match self {
-            Div => "div",
-            Head => "head",
-            Body => "body",
-            Html => "html",
-        }
-    }
-}
-
-impl Display for NodeType {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.as_str())
-    }
-}
-
-/// A node that represents an element in the document tree
-#[derive(Debug)]
-pub struct Node {
-    /// The specific type that this node represents
-    ty: NodeType,
-
-    /// A child might have children that need to be stored
-    children: Vec<Rf<Node>>,
-}
-
-impl Node {
-    pub fn new(ty: NodeType) -> Node {
-        Node {
-            ty,
-            children: Vec::with_capacity(0),
-        }
-    }
-
-    pub fn add_child(&mut self, node: impl Into<Rf<Node>>) {
-        self.children.push(node.into())
-    }
-
-    pub fn find_child_by_element_name(&self, name: &str) -> Option<Rf<Node>> {
-        self.children
-            .iter()
-            .find(|f| f.borrow().as_ref().ty.as_str() == name)
-            .map(|f| f.clone())
-    }
-}
-
-impl Display for Node {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.ty.fmt(f)
-    }
-}
-
-impl TreeDisplay for Node {
-    fn num_children(&self) -> usize {
-        self.children.len()
-    }
-
-    fn child_at(&self, index: usize) -> Option<Rf<dyn TreeDisplay>> {
-        if index < self.children.len() {
-            Some(Rf(self.children[index].0.clone()))
-        } else {
-            None
-        }
+impl Document {
+    pub fn draw(&self, dctx: &mut DrawingContext) {
+        let body = self.body.borrow();
+        body.draw(dctx, self);
     }
 }
 
@@ -148,6 +58,7 @@ where
     let mut depth = 0;
     let mut nodes: HashMap<usize, Node> = HashMap::new();
     let mut errors: Vec<DocumentError> = Vec::new();
+    let mut styling = String::new();
 
     for e in event_reader {
         match e {
@@ -176,6 +87,21 @@ where
 
                 if let Some(node) = nodes.get_mut(&(depth - 1)) {
                     node.add_child(to_add);
+                }
+            }
+            Ok(XmlEvent::Characters(text)) => {
+                if let Some(node) = nodes.get_mut(&(depth - 1)) {
+                    if is_node!(node, NodeType::Style(_)) {
+                        styling.push_str(text.trim());
+                        styling.push('\n');
+                        nodes.remove(&(depth - 1));
+                        // *node = node
+                        //     .clone()
+                        //     .with_type(NodeType::Style(text.trim().to_string()));
+                    } else {
+                        let nd = Rf::new(Node::new(NodeType::Text(text.trim().to_string())));
+                        node.add_child_rf(nd);
+                    }
                 }
             }
             Err(e) => {
@@ -219,7 +145,22 @@ where
         )
     };
 
-    Document { body, head, errors }
+    // let p: String = head
+    //     .borrow()
+    //     .iter()
+    //     .filter(|f| is_node!(f.borrow(), NodeType::Style(_)))
+    //     .map(|f| {
+    //         let style = f.borrow_mut();
+    //         match style.get_type() {
+    //             NodeType::Style(txt) => txt.clone(),
+    //             _ => panic!(),
+    //         }
+    //     })
+    //     .intersperse("\n".to_string())
+    //     .collect();
 
-    // println!("Nodes:\n{}", .unwrap().format());
+    println!("{}", styling);
+    println!("{}", head.borrow().format());
+
+    Document { body, head, errors }
 }

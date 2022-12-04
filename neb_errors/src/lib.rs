@@ -48,7 +48,7 @@ impl Display for DocumentError {
                 self.get_message().bold()
             ),
             ErrorKind::Error => {
-                format!("{}{}", "Info: ".red().bold(), self.get_message().bold())
+                format!("{}{}", "Error: ".red().bold(), self.get_message().bold())
             }
         };
         write!(f, "{}", msg)
@@ -57,7 +57,6 @@ impl Display for DocumentError {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
 
     #[test]
     fn it_works() {}

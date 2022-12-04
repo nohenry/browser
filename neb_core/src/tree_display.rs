@@ -1,4 +1,4 @@
-use std::{fmt::{self, Display}, rc::Rc};
+use std::{fmt::{self, Display}};
 
 use crate::Rf;
 
@@ -50,7 +50,7 @@ pub trait TreeDisplay: Display {
         for i in 0..n {
             let child = self.child_at(i);
             if let Some(child) = child {
-                child.0.borrow().as_ref().write(
+                child.0.borrow().write(
                     f,
                     (i + 1).try_into().unwrap(),
                     &nindent,
