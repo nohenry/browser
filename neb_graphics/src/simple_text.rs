@@ -1,6 +1,6 @@
-use piet_scene::glyph::{pinot, pinot::TableProvider, GlyphContext};
-use piet_scene::kurbo::{Affine, Rect, Size};
-use piet_scene::{Brush, SceneBuilder};
+use vello::glyph::{pinot, pinot::TableProvider, GlyphContext};
+use vello::kurbo::{Affine, Rect, Size};
+use vello::{peniko::Brush, SceneBuilder};
 
 pub use pinot::FontRef;
 

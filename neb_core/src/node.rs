@@ -2,19 +2,20 @@ use std::{fmt::Display, slice::Iter};
 
 use neb_graphics::{
     drawing_context::DrawingContext,
-    piet_scene::{
-        kurbo::{Affine, Rect, Size},
-        Brush, Color
-    },
     simple_text,
+    vello::{
+        kurbo::{Affine, Rect, Size},
+        peniko::{Brush, Color},
+    },
 };
 
 use crate::{
     defaults,
+    dom_parser::Document,
     ids::{get_id_mgr, ID},
     psize,
     tree_display::TreeDisplay,
-    Rf, dom_parser::Document,
+    Rf,
 };
 
 /// The node type is a specific type of element
@@ -80,7 +81,6 @@ macro_rules! is_node {
     }};
 }
 
-
 impl Display for NodeType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.as_str())
@@ -138,7 +138,7 @@ impl Node {
     }
 
     pub fn is_type(&self, ty: &NodeType) -> bool {
-        std::mem::discriminant(&self.ty) ==  std::mem::discriminant(ty)
+        std::mem::discriminant(&self.ty) == std::mem::discriminant(ty)
     }
 
     pub fn get_type(&self) -> &NodeType {
@@ -155,7 +155,6 @@ impl Node {
         self.children
             .iter()
             .for_each(|child| child.borrow().draw(dctx, document));
-
     }
 }
 
@@ -292,7 +291,7 @@ impl Element {
 
         if let Some(bg) = &self.background_color {
             dctx.builder.fill(
-                neb_graphics::piet_scene::Fill::NonZero,
+                neb_graphics::vello::peniko::Fill::NonZero,
                 Affine::IDENTITY,
                 bg,
                 None,

@@ -3,7 +3,7 @@ use std::{
     sync::{Mutex, MutexGuard},
 };
 
-use neb_graphics::piet_scene::kurbo::Rect;
+use neb_graphics::vello::kurbo::Rect;
 
 lazy_static::lazy_static! {
     pub(crate) static ref ID_MANAGER: Mutex<IDManager> = {

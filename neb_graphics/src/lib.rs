@@ -1,6 +1,6 @@
 use drawing_context::DrawingContext;
-use piet_scene::{kurbo::Size, Scene, SceneBuilder};
-use piet_wgsl::{util::RenderContext, Renderer, Result};
+use vello::{kurbo::Size, Scene, SceneBuilder};
+use vello::{util::RenderContext, Renderer, Result};
 use simple_text::SimpleText;
 use winit::{
     dpi::LogicalSize,
@@ -9,7 +9,7 @@ use winit::{
     window::WindowBuilder,
 };
 
-pub use piet_scene;
+pub use vello;
 
 pub mod simple_text;
 

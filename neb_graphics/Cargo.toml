@@ -8,6 +8,7 @@ resolver = "2"
 
 [dependencies]
 wgpu = "0.14"
-piet-wgsl = { git = "https://github.com/linebender/piet-gpu.git" }
-piet-scene = { git = "https://github.com/linebender/piet-gpu.git" }
+# piet-wgsl = { git = "https://github.com/linebender/piet-gpu.git" }
+# piet-scene = { git = "https://github.com/linebender/piet-gpu.git" }
+vello = { git = "https://github.com/linebender/vello.git" }
 winit = "0.27.5"

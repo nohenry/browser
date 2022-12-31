@@ -1228,8 +1228,7 @@ dependencies = [
 name = "neb_graphics"
 version = "0.1.0"
 dependencies = [
- "piet-scene",
- "piet-wgsl",
+ "vello",
  "wgpu",
  "winit",
 ]
@@ -1432,30 +1431,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b6796ad771acdc0123d2a88dc428b5e38ef24456743ddb1744ed628f9815c096"
 dependencies = [
  "siphasher",
-]
-
-[[package]]
-name = "piet-scene"
-version = "0.1.0"
-source = "git+https://github.com/linebender/piet-gpu.git#571822248c92a5e57761ef29391638c5ff942cd7"
-dependencies = [
- "bytemuck",
- "moscato",
- "peniko",
- "smallvec",
-]
-
-[[package]]
-name = "piet-wgsl"
-version = "0.1.0"
-source = "git+https://github.com/linebender/piet-gpu.git#571822248c92a5e57761ef29391638c5ff942cd7"
-dependencies = [
- "bytemuck",
- "futures-intrusive",
- "parking_lot",
- "piet-scene",
- "raw-window-handle 0.5.0",
- "wgpu",
 ]
 
 [[package]]
@@ -2165,6 +2140,21 @@ name = "vec_map"
 version = "0.8.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f1bddf1187be692e79c5ffeab891132dfb0f236ed36a43c7ed39f1165ee20191"
+
+[[package]]
+name = "vello"
+version = "0.1.0"
+source = "git+https://github.com/linebender/vello.git#dfde0936e5064ac8bb2765e1c3fdc1d5ac757a83"
+dependencies = [
+ "bytemuck",
+ "futures-intrusive",
+ "moscato",
+ "parking_lot",
+ "peniko",
+ "raw-window-handle 0.5.0",
+ "smallvec",
+ "wgpu",
+]
 
 [[package]]
 name = "version_check"

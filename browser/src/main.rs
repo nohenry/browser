@@ -3,7 +3,7 @@ use std::{fs::File, io::BufReader};
 use neb_core::{
     defaults,
     dom_parser::parse_from_stream,
-    gfx::piet_scene::{kurbo::Rect, Color},
+    gfx::vello::{kurbo::Rect, peniko::Color},
     psize,
 };
 

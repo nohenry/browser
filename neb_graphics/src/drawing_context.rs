@@ -1,4 +1,4 @@
-use piet_scene::{SceneBuilder, kurbo::Size};
+use vello::{SceneBuilder, kurbo::Size};
 
 use crate::simple_text::SimpleText;
 
