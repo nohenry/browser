@@ -1,4 +1,4 @@
-use std::{fmt::Display, slice::Iter};
+use std::{cell::Ref, fmt::Display, slice::Iter};
 
 use neb_graphics::{
     drawing_context::DrawingContext,
@@ -14,6 +14,7 @@ use crate::{
     dom_parser::Document,
     ids::{get_id_mgr, ID},
     psize,
+    styling::{StyleValue, UnitValue},
     tree_display::TreeDisplay,
     Rf,
 };
@@ -35,6 +36,8 @@ pub enum NodeType {
     Style(String),
 
     Text(String),
+
+    Root,
 }
 
 impl NodeType {
@@ -67,6 +70,7 @@ impl NodeType {
             Html => "html",
             Style(_) => "style",
             Text(s) => s.as_str(),
+            Root => "root",
         }
     }
 }
@@ -98,14 +102,26 @@ pub struct Node {
 
     /// An optional element for displaying
     element: Element,
+
+    parent: Option<Rf<Node>>,
 }
 
 impl Node {
-    pub fn new(ty: NodeType) -> Node {
+    pub fn new(ty: NodeType, parent: Rf<Node>) -> Node {
         Node {
             ty,
             children: Vec::with_capacity(0),
             element: Element::default(),
+            parent: Some(parent),
+        }
+    }
+
+    pub fn new_root(ty: NodeType) -> Node {
+        Node {
+            ty,
+            children: Vec::with_capacity(0),
+            element: Element::default(),
+            parent: None,
         }
     }
 
@@ -156,11 +172,23 @@ impl Node {
             .iter()
             .for_each(|child| child.borrow().draw(dctx, document));
     }
+
+    pub fn parent(&self) -> Rf<Node> {
+        self.parent.as_ref().expect("Expected parent!").clone()
+    }
+
+    pub fn bparrent(&self) -> Ref<Node> {
+        self.parent
+            .as_ref()
+            .expect("Expected parent node!")
+            .borrow()
+    }
 }
 
 impl Display for Node {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.ty.fmt(f)
+        // self.ty.fmt(f)
+        write!(f, "{} - {}", self.ty, self.element.id)
     }
 }
 
@@ -211,14 +239,14 @@ impl Default for Element {
 }
 
 impl Element {
-    pub fn layout(&self, node: &Node, bounds: Rect, depth: usize) -> Rect {
+    pub fn layout(&self, node: &Node, bounds: Rect, depth: usize, document: &Document) -> Rect {
         // println!("Layout: {}", bounds);
         // println!("\n{}layout: {}", indent(depth), node.ty.as_str());
         let bounds = Rect::new(
             bounds.x0 + self.padding.x0,
             bounds.y0 + self.padding.y0,
-            bounds.x1 + self.padding.x1,
-            bounds.y1 + self.padding.y1,
+            bounds.x1 - self.padding.x1,
+            bounds.y1 - self.padding.y1,
         );
 
         let area = match &node.ty {
@@ -245,10 +273,10 @@ impl Element {
                     //     rect
                     // );
 
-                    let area = node.element.layout(&node, area, depth + 1);
+                    let area = node.element.layout(&node, area, depth + 1, document);
                     // println!("{}Nsdfsdode: {:?}", indent(depth), area);
 
-                    rect.y1 += area.height()
+                    rect.y1 += area.height().round()
                     // rect = area;
                 }
                 // println!("{}End", indent(depth));
@@ -257,14 +285,35 @@ impl Element {
             NodeType::Body => {
                 let mut rect = Rect::new(bounds.x0, bounds.y0, bounds.x1, bounds.y0);
 
+                let gap = if let Some(style) =
+                    document.get_styles().borrow().get(node.get_type().as_str())
+                {
+                    let style = style.borrow();
+                    style
+                        .get("gap")
+                        .map(|f| match f {
+                            StyleValue::Gap { amount } => *amount,
+                            _ => panic!()
+                        })
+                        .unwrap_or(UnitValue::Pixels(0.0))
+                } else {
+                    UnitValue::Pixels(0.0)
+                };
+
+                let gap_pixels = match gap {
+                    UnitValue::Pixels(p) => p,
+                };
+
+                println!("Gap {}", gap_pixels);
+
                 for child in node.children.iter() {
                     let node = child.borrow();
                     let area =
                         Rect::new(bounds.x0, bounds.y0 + rect.height(), bounds.x1, bounds.y1);
 
-                    let area = node.element.layout(&node, area, depth + 1);
+                    let area = node.element.layout(&node, area, depth + 1, document);
 
-                    rect.y1 += area.height()
+                    rect.y1 += area.height() + gap_pixels as f64
                 }
                 bounds
             }
@@ -274,8 +323,8 @@ impl Element {
         let padded = Rect::new(
             area.x0 - self.padding.x0,
             area.y0 - self.padding.y0,
-            area.x1 - self.padding.x1,
-            area.y1 - self.padding.y1,
+            area.x1 + self.padding.x1,
+            area.y1 + self.padding.y1,
         );
 
         get_id_mgr().set_layout(self.id, padded);
@@ -289,15 +338,36 @@ impl Element {
         let mut binding = get_id_mgr();
         let layout = binding.get_layout(self.id);
 
-        if let Some(bg) = &self.background_color {
-            dctx.builder.fill(
-                neb_graphics::vello::peniko::Fill::NonZero,
-                Affine::IDENTITY,
-                bg,
-                None,
-                &layout,
-            );
+        // let parent = node.bparrent();
+        if let Some(style) = document.get_styles().borrow().get(node.ty.as_str()) {
+            let style = style.borrow();
+
+            for val in style.values() {
+                match val {
+                    StyleValue::BackgroundColor { color } => {
+                        dctx.builder.fill(
+                            neb_graphics::vello::peniko::Fill::NonZero,
+                            Affine::IDENTITY,
+                            color,
+                            None,
+                            &layout,
+                        );
+                    }
+                    _ => (),
+                }
+            }
         }
+        // parent.ty.as_str()
+
+        // if let Some(bg) = &self.background_color {
+        //     dctx.builder.fill(
+        //         neb_graphics::vello::peniko::Fill::NonZero,
+        //         Affine::IDENTITY,
+        //         bg,
+        //         None,
+        //         &layout,
+        //     );
+        // }
 
         match &node.ty {
             NodeType::Text(t) => {

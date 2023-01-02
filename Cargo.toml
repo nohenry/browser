@@ -1,5 +1,5 @@
 [workspace]
-members = ["browser", "neb_core", "neb_errors", "neb_graphics"]
+members = ["browser", "neb_core", "neb_errors", "neb_graphics", "neb_macros"]
 resolver = "2"
 
 [patch.crates-io]

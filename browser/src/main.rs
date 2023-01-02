@@ -44,7 +44,7 @@ fn main() {
             let body = body.borrow();
 
             body.get_element()
-                .layout(&body, Rect::from_origin_size((0.0, 0.0), builder.size), 0);
+                .layout(&body, Rect::from_origin_size((0.0, 0.0), builder.size), 0, &document);
         }
 
         document.draw(builder)

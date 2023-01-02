@@ -6,7 +6,6 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-swc_ecma_parser = "0.123.3"
 xml-rs = "0.8.4"
 lazy_static = "*"
 idgenerator = "2.0.0"
@@ -15,3 +14,6 @@ cssparser = "0.29.6"
 
 neb_errors = { path = "../neb_errors" }
 neb_graphics = { path = "../neb_graphics" }
+neb_macros = { path = "../neb_macros" }
+
+nom = "7.1.1"
