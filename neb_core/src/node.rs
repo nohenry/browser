@@ -1,20 +1,22 @@
-use std::{cell::Ref, fmt::Display, slice::Iter};
+use std::{cell::Ref, collections::HashMap, fmt::Display, slice::Iter};
 
 use neb_graphics::{
     drawing_context::DrawingContext,
     simple_text,
     vello::{
-        kurbo::{Affine, Rect, Size},
+        kurbo::{Affine, Rect, RoundedRectRadii, Size},
         peniko::{Brush, Color},
     },
 };
+
+use crate::{rectr::RoundedRect, StyleValueAs};
 
 use crate::{
     defaults,
     dom_parser::Document,
     ids::{get_id_mgr, ID},
     psize,
-    styling::{StyleValue, UnitValue},
+    styling::{Selector, StyleValue, UnitValue},
     tree_display::TreeDisplay,
     Rf,
 };
@@ -26,6 +28,8 @@ use crate::{
 pub enum NodeType {
     /// A general element type
     Div = 0,
+
+    Span,
 
     Head,
 
@@ -46,6 +50,7 @@ impl NodeType {
 
         match element.to_lowercase().as_str() {
             "div" => Some(Div),
+            "span" => Some(Span),
             "html" => Some(Html),
             "head" => Some(Head),
             "body" => Some(Body),
@@ -65,6 +70,7 @@ impl NodeType {
         use NodeType::*;
         match self {
             Div => "div",
+            Span => "span",
             Head => "head",
             Body => "body",
             Html => "html",
@@ -89,6 +95,10 @@ impl Display for NodeType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.as_str())
     }
+}
+
+lazy_static::lazy_static! {
+    static ref EMPTY_HASHMAP: HashMap<String, StyleValue> = HashMap::with_capacity(0);
 }
 
 /// A node that represents an element in the document tree
@@ -177,6 +187,18 @@ impl Node {
         self.parent.as_ref().expect("Expected parent!").clone()
     }
 
+    pub fn styles(&self, document: &Document, key: &str) -> StyleValue {
+        let styles = document.get_styles();
+        let styles = styles.borrow();
+        let styles = styles.get(self.get_type().as_str());
+        if let Some(styles) = styles {
+            let styles = styles.borrow();
+            styles.get(key).cloned().unwrap_or(StyleValue::Empty)
+        } else {
+            StyleValue::Empty
+        }
+    }
+
     pub fn bparrent(&self) -> Ref<Node> {
         self.parent
             .as_ref()
@@ -214,40 +236,89 @@ impl TreeDisplay for Node {
 #[derive(Debug, Clone)]
 pub struct Element {
     id: ID,
-
-    pub content_size: Size,
-    pub padding: Rect,
-    pub border: Rect,
-
-    pub background_color: Option<Brush>,
-    pub foreground_color: Brush,
 }
 
 impl Default for Element {
     fn default() -> Self {
         Self {
             id: get_id_mgr().gen_insert_zero(),
-
-            content_size: Default::default(),
-            padding: Default::default(),
-            border: Default::default(),
-
-            background_color: Some(Color::BEIGE.into()),
-            foreground_color: Color::DARK_RED.into(),
         }
     }
 }
 
 impl Element {
     pub fn layout(&self, node: &Node, bounds: Rect, depth: usize, document: &Document) -> Rect {
-        // println!("Layout: {}", bounds);
-        // println!("\n{}layout: {}", indent(depth), node.ty.as_str());
-        let bounds = Rect::new(
-            bounds.x0 + self.padding.x0,
-            bounds.y0 + self.padding.y0,
-            bounds.x1 - self.padding.x1,
-            bounds.y1 - self.padding.y1,
-        );
+        let padding: Option<Rect> =
+            StyleValueAs!(node.styles(document, "padding"), Padding).map(|r| r.try_into().unwrap());
+        let border_width: Option<Rect> =
+            StyleValueAs!(node.styles(document, "borderWidth"), BorderWidth)
+                .map(|r| r.try_into().unwrap());
+
+        /*
+            The padding and border take up space,
+            therefore we have to subtract them from the bounds so that
+            the child nodes don't use up this space
+        */
+        let bounds = if let Some(padding) = padding {
+            Rect::new(
+                bounds.x0 + padding.x0,
+                bounds.y0 + padding.y0,
+                bounds.x1 - padding.x1,
+                bounds.y1 - padding.y1,
+            )
+        } else {
+            bounds
+        };
+
+        let bounds = if let Some(border) = border_width {
+            Rect::new(
+                bounds.x0 + border.x0,
+                bounds.y0 + border.y0,
+                bounds.x1 - border.x1,
+                bounds.y1 - border.y1,
+            )
+        } else {
+            bounds
+        };
+
+        // Lays out child nodes in a stack
+        let layout_children = || {
+            // Start the bounds from top up (bounds.y0)
+            let mut rect = Rect::new(bounds.x0, bounds.y0, bounds.x1, bounds.y0);
+
+            // The gap is the space in between child nodes
+            let gap =
+                if let Some(style) = document.get_styles().borrow().get(node.get_type().as_str()) {
+                    let style = style.borrow();
+                    style
+                        .get("gap")
+                        .map(|f| match f {
+                            StyleValue::Gap { amount } => *amount,
+                            _ => panic!(),
+                        })
+                        .unwrap_or(UnitValue::Pixels(0.0))
+                } else {
+                    UnitValue::Pixels(0.0)
+                };
+
+            let gap_pixels = match gap {
+                UnitValue::Pixels(p) => p,
+            };
+
+            // Layout each child and add it's requested size to the total area
+            for child in node.children.iter() {
+                let node = child.borrow();
+
+                // The bounds of the space that has not been taken up yet
+                let area = Rect::new(bounds.x0, bounds.y0 + rect.height(), bounds.x1, bounds.y1);
+
+                let area = node.element.layout(&node, area, depth + 1, document);
+
+                // We round height for that pixel perfection 🤤
+                rect.y1 += area.height().round() + gap_pixels as f64
+            }
+            rect
+        };
 
         let area = match &node.ty {
             NodeType::Text(t) => {
@@ -255,119 +326,142 @@ impl Element {
                 let tl = simple_text.layout(None, psize!(defaults::TEXT_SIZE), t);
                 Rect::from_origin_size((bounds.x0, bounds.y0), (tl.width(), tl.height()))
             }
-            NodeType::Div => {
-                let mut rect = Rect::new(bounds.x0, bounds.y0, bounds.x1, bounds.y0);
-
-                // println!("{}Start", indent(depth));
-                for child in node.children.iter() {
-                    // println!("{}lp", indent(depth));
-                    let node = child.borrow();
-
-                    let area =
-                        Rect::new(bounds.x0, bounds.y0 + rect.height(), bounds.x1, bounds.y1);
-                    // println!(
-                    //     "{}dfjsklsdj: {:?}\n{}{:?}",
-                    //     indent(depth),
-                    //     area,
-                    //     indent(depth),
-                    //     rect
-                    // );
-
-                    let area = node.element.layout(&node, area, depth + 1, document);
-                    // println!("{}Nsdfsdode: {:?}", indent(depth), area);
-
-                    rect.y1 += area.height().round()
-                    // rect = area;
-                }
-                // println!("{}End", indent(depth));
-                rect
-            }
+            NodeType::Div | NodeType::Span => layout_children(),
             NodeType::Body => {
-                let mut rect = Rect::new(bounds.x0, bounds.y0, bounds.x1, bounds.y0);
-
-                let gap = if let Some(style) =
-                    document.get_styles().borrow().get(node.get_type().as_str())
-                {
-                    let style = style.borrow();
-                    style
-                        .get("gap")
-                        .map(|f| match f {
-                            StyleValue::Gap { amount } => *amount,
-                            _ => panic!()
-                        })
-                        .unwrap_or(UnitValue::Pixels(0.0))
-                } else {
-                    UnitValue::Pixels(0.0)
-                };
-
-                let gap_pixels = match gap {
-                    UnitValue::Pixels(p) => p,
-                };
-
-                println!("Gap {}", gap_pixels);
-
-                for child in node.children.iter() {
-                    let node = child.borrow();
-                    let area =
-                        Rect::new(bounds.x0, bounds.y0 + rect.height(), bounds.x1, bounds.y1);
-
-                    let area = node.element.layout(&node, area, depth + 1, document);
-
-                    rect.y1 += area.height() + gap_pixels as f64
-                }
+                layout_children();
+                /* Only difference in body is in keeps the max size */
                 bounds
             }
             _ => Rect::ZERO,
         };
 
-        let padded = Rect::new(
-            area.x0 - self.padding.x0,
-            area.y0 - self.padding.y0,
-            area.x1 + self.padding.x1,
-            area.y1 + self.padding.y1,
-        );
+        let bounds = if let Some(padding) = padding {
+            Rect::new(
+                area.x0 - padding.x0,
+                area.y0 - padding.y0,
+                area.x1 + padding.x1,
+                area.y1 + padding.y1,
+            )
+        } else {
+            area
+        };
 
-        get_id_mgr().set_layout(self.id, padded);
+        // Set the content bounds. This is used for drawing a background for the content with a border
+        get_id_mgr().set_layout_content(self.id, bounds);
 
-        // println!();
-        // println!("Node: {:20} Layout: {}", node.ty.as_str(), padded);
-        padded
+        let bounds = if let Some(border) = border_width {
+            Rect::new(
+                area.x0 - border.x0,
+                area.y0 - border.y0,
+                area.x1 + border.x1,
+                area.y1 + border.y1,
+            )
+        } else {
+            bounds
+        };
+
+        // Set the border bounds; the physical area that the border takes up. This bounds is used or drawing the border color
+        get_id_mgr().set_layout_border(self.id, bounds);
+
+        bounds
     }
 
     pub fn draw(&self, node: &Node, dctx: &mut DrawingContext, document: &Document) {
         let mut binding = get_id_mgr();
         let layout = binding.get_layout(self.id);
 
-        // let parent = node.bparrent();
-        if let Some(style) = document.get_styles().borrow().get(node.ty.as_str()) {
-            let style = style.borrow();
+        let background_color =
+            StyleValueAs!(node.styles(document, "backgroundColor"), BackgroundColor);
+        let border_color = StyleValueAs!(node.styles(document, "borderColor"), BorderColor);
+        let foreground_color =
+            StyleValueAs!(node.styles(document, "foregroundColor"), ForegroundColor);
+        let radius = StyleValueAs!(node.styles(document, "radius"), Radius);
 
-            for val in style.values() {
-                match val {
-                    StyleValue::BackgroundColor { color } => {
-                        dctx.builder.fill(
-                            neb_graphics::vello::peniko::Fill::NonZero,
-                            Affine::IDENTITY,
-                            color,
-                            None,
-                            &layout,
-                        );
-                    }
-                    _ => (),
-                }
+        let radius: Option<RoundedRectRadii> = radius.map(|rad| rad.try_into().unwrap());
+
+        if let Some(color) = border_color {
+            // If we have a radius, draw it instead
+            if let Some(radius) = radius {
+                let rounded = RoundedRect::from_rect(layout.border_rect, radius);
+                dctx.builder.fill(
+                    neb_graphics::vello::peniko::Fill::NonZero,
+                    Affine::IDENTITY,
+                    color,
+                    None,
+                    &rounded,
+                );
+            } else {
+                // No radius
+                dctx.builder.fill(
+                    neb_graphics::vello::peniko::Fill::NonZero,
+                    Affine::IDENTITY,
+                    color,
+                    None,
+                    &layout.border_rect,
+                );
             }
         }
-        // parent.ty.as_str()
 
-        // if let Some(bg) = &self.background_color {
-        //     dctx.builder.fill(
-        //         neb_graphics::vello::peniko::Fill::NonZero,
-        //         Affine::IDENTITY,
-        //         bg,
-        //         None,
-        //         &layout,
-        //     );
-        // }
+        if let Some(color) = background_color {
+            if let Some(radius) = radius {
+                let border_width = StyleValueAs!(node.styles(document, "borderWidth"), BorderWidth);
+
+                // Only allow the content to have a radius if the radius is larger than the border width
+                let radius = if let Some(w) = border_width {
+                    let w: Rect = w.try_into().unwrap();
+                    RoundedRectRadii::new(
+                        if radius.top_left > w.x0 && radius.top_left > w.y0 {
+                            radius.top_left
+                        } else {
+                            0.0
+                        },
+                        if radius.top_right > w.x1 && radius.top_right > w.y0 {
+                            radius.top_left
+                        } else {
+                            0.0
+                        },
+                        if radius.bottom_right > w.x1 && radius.bottom_right > w.y1 {
+                            radius.top_left
+                        } else {
+                            0.0
+                        },
+                        if radius.bottom_left > w.x0 && radius.bottom_left > w.y0 {
+                            radius.top_left
+                        } else {
+                            0.0
+                        },
+                    )
+                } else {
+                    radius
+                };
+
+                let mut rounded = RoundedRect::from_rect(layout.content_rect, radius);
+                rounded.set_center(layout.border_rect);
+
+                dctx.builder.fill(
+                    neb_graphics::vello::peniko::Fill::NonZero,
+                    Affine::IDENTITY,
+                    color,
+                    None,
+                    &rounded,
+                );
+            } else {
+                // No radius
+                dctx.builder.fill(
+                    neb_graphics::vello::peniko::Fill::NonZero,
+                    Affine::IDENTITY,
+                    color,
+                    None,
+                    &layout.content_rect,
+                );
+            }
+        }
+
+        let foreground_color = if let Some(foreground_color) = foreground_color {
+            foreground_color
+        } else {
+            defaults::FOREGROUND_COLOR
+        };
 
         match &node.ty {
             NodeType::Text(t) => {
@@ -377,8 +471,8 @@ impl Element {
                     psize!(defaults::TEXT_SIZE),
                     None,
                     None,
-                    Some(&self.foreground_color),
-                    Affine::translate((layout.x0, layout.y0)),
+                    Some(&Brush::Solid(foreground_color)),
+                    Affine::translate((layout.content_rect.x0, layout.content_rect.y0)),
                     t,
                 );
             }

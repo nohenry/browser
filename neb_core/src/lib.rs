@@ -20,6 +20,8 @@ mod ids;
 
 pub mod styling;
 
+mod rectr;
+
 #[cfg(test)]
 mod tests {
 

@@ -17,10 +17,29 @@ pub(crate) fn get_id_mgr() -> MutexGuard<'static, IDManager> {
 
 pub type ID = u64;
 
+#[derive(Debug)]
+pub struct Layout {
+    pub content_rect: Rect,
+    pub border_rect: Rect,
+}
+
+pub const LAYOUT_ZERO: Layout = Layout {
+    content_rect: Rect::ZERO,
+    border_rect: Rect::ZERO,
+};
+
+impl Default for Layout {
+    fn default() -> Self {
+        Self {
+            content_rect: Rect::ZERO,
+            border_rect: Rect::ZERO,
+        }
+    }
+}
 
 #[derive(Debug)]
 pub(crate) struct IDManager {
-    pub(crate) id_mappings: HashMap<ID, Rect>,
+    pub(crate) id_mappings: HashMap<ID, Layout>,
     next_id: ID,
 }
 
@@ -32,16 +51,42 @@ impl IDManager {
 
     pub fn gen_insert_zero(&mut self) -> ID {
         let id = self.gen_id();
-        self.id_mappings.insert(id, Rect::ZERO);
+        self.id_mappings.insert(id, Default::default());
         id
     }
 
-    pub fn set_layout(&mut self, id: ID, layout: Rect) -> Option<Rect> {
-        self.id_mappings.insert(id, layout)
+    pub fn set_layout_content(&mut self, id: ID, layout: Rect) -> Option<Layout> {
+        if let Some(full) = self.id_mappings.get_mut(&id) {
+            full.content_rect = layout;
+            None
+        } else {
+            self.id_mappings.insert(
+                id,
+                Layout {
+                    content_rect: layout,
+                    border_rect: layout,
+                },
+            )
+        }
     }
 
-    pub fn get_layout(&mut self, id: ID) -> &Rect {
-        self.id_mappings.get(&id).unwrap_or(&Rect::ZERO)
+    pub fn set_layout_border(&mut self, id: ID, layout: Rect) -> Option<Layout> {
+        if let Some(full) = self.id_mappings.get_mut(&id) {
+            full.border_rect = layout;
+            None
+        } else {
+            self.id_mappings.insert(
+                id,
+                Layout {
+                    content_rect: layout,
+                    border_rect: layout,
+                },
+            )
+        }
+    }
+
+    pub fn get_layout(&mut self, id: ID) -> &Layout {
+        self.id_mappings.get(&id).unwrap_or(&LAYOUT_ZERO)
     }
 }
 

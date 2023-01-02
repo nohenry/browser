@@ -21,23 +21,6 @@ fn main() {
         return;
     };
 
-    {
-        let body = document.get_body();
-        {
-            let mut body = body.borrow_mut();
-            let elmt = body.get_element_mut();
-
-            elmt.padding = Rect::new(
-                psize!(defaults::DOCUMENT_PADDING) as _,
-                psize!(defaults::DOCUMENT_PADDING) as _,
-                psize!(defaults::DOCUMENT_PADDING) as _,
-                psize!(defaults::DOCUMENT_PADDING) as _,
-            );
-
-            elmt.background_color = Some(Color::AQUA.into());
-        }
-    }
-
     pollster::block_on(neb_core::gfx::start_graphics_thread(move |builder| {
         {
             let body = document.get_body();

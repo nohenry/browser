@@ -6,12 +6,14 @@ use std::{
     hash::Hasher,
 };
 
+use neb_graphics::vello::kurbo::{Rect, RoundedRectRadii};
 use neb_graphics::vello::peniko::Color;
-use neb_macros::EnumHash;
+use neb_macros::{EnumExtract, EnumHash};
 use nom::branch::alt;
 use nom::bytes::streaming::take_while;
-use nom::character::complete::one_of;
+use nom::character::complete::{hex_digit1, one_of};
 use nom::character::streaming::digit1;
+use nom::combinator::map_res;
 use nom::error::ParseError;
 use nom::multi::count;
 use nom::number::streaming::recognize_float;
@@ -28,10 +30,82 @@ use nom::{AsChar, FindToken, InputTakeAtPosition};
 
 use crate::Rf;
 
-#[derive(EnumHash, Debug)]
+#[derive(EnumHash, Debug, Clone)]
 pub enum StyleValue {
+    /* Colors */
     BackgroundColor { color: Color },
+    ForegroundColor { color: Color },
+
+    BorderWidth { rect: UnitRect },
+    BorderRadius { rect: UnitRect },
+    BorderColor { color: Color },
+
+    /* Sizing */
     Gap { amount: UnitValue },
+    Padding { rect: UnitRect },
+    Radius { rect: UnitRect },
+
+    Empty,
+}
+
+#[macro_export]
+macro_rules! StyleValueAs {
+  ($e:expr,BackgroundColor) => {
+    match$e {
+      StyleValue::BackgroundColor {
+        color
+      } => Some((color)),_ => None,
+    }
+  };
+  ($e:expr,ForegroundColor) => {
+    match$e {
+      StyleValue::ForegroundColor {
+        color
+      } => Some((color)),_ => None,
+    }
+  };
+  ($e:expr,BorderWidth) => {
+    match$e {
+      StyleValue::BorderWidth {
+        rect
+      } => Some((rect)),_ => None,
+    }
+  };
+  ($e:expr,BorderRadius) => {
+    match$e {
+      StyleValue::BorderRadius {
+        rect
+      } => Some((rect)),_ => None,
+    }
+  };
+  ($e:expr,BorderColor) => {
+    match$e {
+      StyleValue::BorderColor {
+        color
+      } => Some((color)),_ => None,
+    }
+  };
+  ($e:expr,Gap) => {
+    match$e {
+      StyleValue::Gap {
+        amount
+      } => Some((amount)),_ => None,
+    }
+  };
+  ($e:expr,Padding) => {
+    match$e {
+      StyleValue::Padding {
+        rect
+      } => Some((rect)),_ => None,
+    }
+  };
+    ($e:expr,Radius) => {
+    match$e {
+      StyleValue::Radius {
+        rect
+      } => Some((rect)),_ => None,
+    }
+  };
 }
 
 #[derive(Debug)]
@@ -51,6 +125,10 @@ impl Selector {
 
     pub fn get(&self, key: &str) -> Option<&StyleValue> {
         self.values.get(key)
+    }
+
+    pub fn map(&self) -> &HashMap<String, StyleValue> {
+        &self.values
     }
 }
 
@@ -118,6 +196,26 @@ pub fn parse_value(bytes: &[u8]) -> IResult<&[u8], (String, StyleValue)> {
             let (bytes, value) = parse_units_values(val)?;
             (bytes, StyleValue::Gap { amount: value })
         }
+        StyleValueHashes::Padding => {
+            let (bytes, value) = parse_rect(val)?;
+            (bytes, StyleValue::Padding { rect: value })
+        }
+        StyleValueHashes::BorderColor => {
+            let (bytes, value) = parse_color(val)?;
+            (bytes, StyleValue::BorderColor { color: value })
+        }
+        StyleValueHashes::BorderWidth => {
+            let (bytes, value) = parse_rect(val)?;
+            (bytes, StyleValue::BorderWidth { rect: value })
+        }
+        StyleValueHashes::ForegroundColor => {
+            let (bytes, value) = parse_color(val)?;
+            (bytes, StyleValue::ForegroundColor { color: value })
+        }
+        StyleValueHashes::Radius => {
+            let (bytes, value) = parse_rect(val)?;
+            (bytes, StyleValue::Radius { rect: value })
+        }
         _ => panic!(),
     };
 
@@ -145,31 +243,73 @@ pub fn parse_rgb(bytes: &[u8]) -> IResult<&[u8], Color> {
 }
 
 pub fn parse_hex(bytes: &[u8]) -> IResult<&[u8], Color> {
-    let (_, val) = preceded(
+    preceded(
         tag("#"),
-        count(
-            map(
-                pair(
-                    one_of("0123456789abcdefABCDEF"),
-                    one_of("0123456789abcdefABCDEF"),
-                ),
-                |(a, b)| {
-                    let hi = char_to_hex(a);
-                    let lo = char_to_hex(b);
+        map_res(
+            hex_digit1,
+            |digit| {
+                let str = std::str::from_utf8(digit).unwrap();
+                if str.len() == 3 {
+                    let mut it = str.chars();
+                    let r = char_to_hex(it.next().unwrap());
+                    let g = char_to_hex(it.next().unwrap());
+                    let b = char_to_hex(it.next().unwrap());
+                    Ok(Color::rgb8(r, g, b))
+                } else if str.len() == 6 {
+                    let mut it = str.chars();
 
-                    (hi << 4) & lo
-                },
-            ),
-            3,
+                    let r1 = it.next().unwrap();
+                    let r2 = it.next().unwrap();
+                    let r = char_to_hex(r1) << 4 | char_to_hex(r2);
+
+                    let g1 = it.next().unwrap();
+                    let g2 = it.next().unwrap();
+                    let g = char_to_hex(g1) << 4 | char_to_hex(g2);
+
+                    let b1 = it.next().unwrap();
+                    let b2 = it.next().unwrap();
+                    let b = char_to_hex(b1) << 4 | char_to_hex(b2);
+
+                    Ok(Color::rgb8(r, g, b))
+                } else {
+                    Err(nom::Err::Error(nom::error::Error::new(
+                        bytes,
+                        nom::error::ErrorKind::SeparatedList,
+                    )))
+                }
+            }, // pair(
+
+               //     one_of("0123456789abcdefABCDEF"),
+               //     one_of("0123456789abcdefABCDEF"),
+               // ),
+               // |(a, b)| {
+               //     let hi = char_to_hex(a);
+               //     let lo = char_to_hex(b);
+
+               //     (hi << 4) & lo
+               // },
         ),
-    )(bytes)?;
+    )(bytes)
+}
 
-    Ok((bytes, Color::rgb8(val[0], val[1], val[2])))
+pub fn parse_rect(bytes: &[u8]) -> IResult<&[u8], UnitRect> {
+    map_res(
+        separated_list1(wal(tag(",")), parse_units_values),
+        |vals| match vals.len() {
+            1 => Ok(UnitRect::new(vals[0], vals[0], vals[0], vals[0])),
+            2 => Ok(UnitRect::new(vals[0], vals[1], vals[0], vals[1])),
+            4 => Ok(UnitRect::new(vals[0], vals[1], vals[2], vals[3])),
+            _ => Err(nom::Err::Error(nom::error::Error::new(
+                bytes,
+                nom::error::ErrorKind::SeparatedList,
+            ))),
+        },
+    )(bytes)
 }
 
 #[derive(Clone, Copy)]
 pub enum UnitValue {
-    Pixels(f32),
+    Pixels(f64),
 }
 
 impl Debug for UnitValue {
@@ -186,9 +326,49 @@ impl Display for UnitValue {
     }
 }
 
+#[derive(Clone, Copy, Debug)]
+pub struct UnitRect {
+    x0: UnitValue,
+    y0: UnitValue,
+    x1: UnitValue,
+    y1: UnitValue,
+}
+
+impl UnitRect {
+    pub fn new(x0: UnitValue, y0: UnitValue, x1: UnitValue, y1: UnitValue) -> UnitRect {
+        UnitRect { x0, y0, x1, y1 }
+    }
+}
+
+impl TryInto<Rect> for UnitRect {
+    type Error = ();
+
+    fn try_into(self) -> Result<Rect, Self::Error> {
+        use UnitValue::*;
+        match (self.x0, self.y0, self.x1, self.y1) {
+            (Pixels(x0), Pixels(y0), Pixels(x1), Pixels(y1)) => Ok(Rect::new(x0, y0, x1, y1)),
+            _ => Err(()),
+        }
+    }
+}
+
+impl TryInto<RoundedRectRadii> for UnitRect {
+    type Error = ();
+
+    fn try_into(self) -> Result<RoundedRectRadii, Self::Error> {
+        use UnitValue::*;
+        match (self.x0, self.y0, self.x1, self.y1) {
+            (Pixels(x0), Pixels(y0), Pixels(x1), Pixels(y1)) => {
+                Ok(RoundedRectRadii::new(x0, y0, x1, y1))
+            }
+            _ => Err(()),
+        }
+    }
+}
+
 pub fn parse_units_values(bytes: &[u8]) -> IResult<&[u8], UnitValue> {
     map(terminated(recognize_float, tag("px")), |val| {
-        UnitValue::Pixels(std::str::from_utf8(val).unwrap().parse::<f32>().unwrap())
+        UnitValue::Pixels(std::str::from_utf8(val).unwrap().parse::<f64>().unwrap())
     })(bytes)
 }
 
