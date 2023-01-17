@@ -71,6 +71,7 @@ impl IDManager {
     }
 
     pub fn set_layout_border(&mut self, id: ID, layout: Rect) -> Option<Layout> {
+        // println!("Setting border for {} {}", id, layout);
         if let Some(full) = self.id_mappings.get_mut(&id) {
             full.border_rect = layout;
             None

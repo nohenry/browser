@@ -1,0 +1,17 @@
+style {
+    large {
+
+    }
+
+    centered {
+        
+    }
+}
+
+body {
+    This is some text
+    
+    div(class: [large, centered]) {
+        
+    }
+}

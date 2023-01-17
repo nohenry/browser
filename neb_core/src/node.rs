@@ -4,12 +4,17 @@ use neb_graphics::{
     drawing_context::DrawingContext,
     simple_text,
     vello::{
-        kurbo::{Affine, Rect, RoundedRectRadii, Size},
-        peniko::{Brush, Color},
+        kurbo::{Affine, Rect, RoundedRectRadii, Size, Vec2},
+        peniko::{Brush, Color, Fill, Stroke},
     },
 };
 
-use crate::{rectr::RoundedRect, StyleValueAs};
+use crate::{
+    rectr::RoundedRect,
+    styling::{self, Direction},
+    svg::{self, PicoSvg},
+    StyleValueAs,
+};
 
 use crate::{
     defaults,
@@ -23,7 +28,7 @@ use crate::{
 
 /// The node type is a specific type of element
 /// The most common element is the `Div` which is for general use case
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 #[repr(u8)]
 pub enum NodeType {
     /// A general element type
@@ -41,6 +46,12 @@ pub enum NodeType {
 
     Text(String),
 
+    Svg(PicoSvg),
+
+    G,
+
+    Path(String),
+
     Root,
 }
 
@@ -55,6 +66,12 @@ impl NodeType {
             "head" => Some(Head),
             "body" => Some(Body),
             "style" => Some(Style(String::with_capacity(0))),
+            "g" => Some(G),
+            "path" => Some(Path(String::with_capacity(0))),
+            "svg" => Some(Svg(PicoSvg {
+                items: Vec::with_capacity(0),
+                view: Rect::ZERO,
+            })),
             _ => None,
         }
     }
@@ -75,6 +92,9 @@ impl NodeType {
             Body => "body",
             Html => "html",
             Style(_) => "style",
+            Svg(_) => "svg",
+            G => "g",
+            Path(_) => "path",
             Text(s) => s.as_str(),
             Root => "root",
         }
@@ -97,15 +117,11 @@ impl Display for NodeType {
     }
 }
 
-lazy_static::lazy_static! {
-    static ref EMPTY_HASHMAP: HashMap<String, StyleValue> = HashMap::with_capacity(0);
-}
-
 /// A node that represents an element in the document tree
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Node {
     /// The specific type that this node represents
-    ty: NodeType,
+    pub ty: NodeType,
 
     /// A child might have children that need to be stored
     children: Vec<Rf<Node>>,
@@ -138,6 +154,22 @@ impl Node {
     pub fn with_type(mut self, ty: NodeType) -> Self {
         self.ty = ty;
         self
+    }
+
+    pub fn with_classes(mut self, classes: impl Into<Vec<String>>) -> Self {
+        self.element = self.element.with_classes(classes);
+        self
+    }
+
+    pub fn remove_children(&mut self) {
+        let remove = match self.ty {
+            NodeType::Svg(_) => true,
+            _ => false,
+        };
+
+        if remove {
+            self.children.clear();
+        }
     }
 
     pub fn add_child(&mut self, node: impl Into<Rf<Node>>) {
@@ -193,13 +225,23 @@ impl Node {
         let styles = styles.get(self.get_type().as_str());
         if let Some(styles) = styles {
             let styles = styles.borrow();
-            styles.get(key).cloned().unwrap_or(StyleValue::Empty)
+            styles.get(key).cloned().unwrap_or_else(|| {
+                if self.parent.is_some() && styling::is_inherited(key) {
+                    self.bparent().styles(document, key)
+                } else {
+                    StyleValue::Empty
+                }
+            })
         } else {
-            StyleValue::Empty
+            if self.parent.is_some() && styling::is_inherited(key) {
+                self.bparent().styles(document, key)
+            } else {
+                StyleValue::Empty
+            }
         }
     }
 
-    pub fn bparrent(&self) -> Ref<Node> {
+    pub fn bparent(&self) -> Ref<Node> {
         self.parent
             .as_ref()
             .expect("Expected parent node!")
@@ -236,12 +278,22 @@ impl TreeDisplay for Node {
 #[derive(Debug, Clone)]
 pub struct Element {
     id: ID,
+
+    classes: Vec<String>,
+}
+
+impl Element {
+    pub fn with_classes(mut self, classes: impl Into<Vec<String>>) -> Self {
+        self.classes = classes.into();
+        self
+    }
 }
 
 impl Default for Element {
     fn default() -> Self {
         Self {
             id: get_id_mgr().gen_insert_zero(),
+            classes: Vec::with_capacity(0),
         }
     }
 }
@@ -282,24 +334,14 @@ impl Element {
         };
 
         // Lays out child nodes in a stack
-        let layout_children = || {
+        let layout_children_vertically = |gap: UnitValue, fit: bool| {
             // Start the bounds from top up (bounds.y0)
-            let mut rect = Rect::new(bounds.x0, bounds.y0, bounds.x1, bounds.y0);
-
-            // The gap is the space in between child nodes
-            let gap =
-                if let Some(style) = document.get_styles().borrow().get(node.get_type().as_str()) {
-                    let style = style.borrow();
-                    style
-                        .get("gap")
-                        .map(|f| match f {
-                            StyleValue::Gap { amount } => *amount,
-                            _ => panic!(),
-                        })
-                        .unwrap_or(UnitValue::Pixels(0.0))
-                } else {
-                    UnitValue::Pixels(0.0)
-                };
+            let mut rect = Rect::new(
+                bounds.x0,
+                bounds.y0,
+                if fit { bounds.x0 } else { bounds.x1 },
+                bounds.y0,
+            );
 
             let gap_pixels = match gap {
                 UnitValue::Pixels(p) => p,
@@ -313,6 +355,11 @@ impl Element {
                 let area = Rect::new(bounds.x0, bounds.y0 + rect.height(), bounds.x1, bounds.y1);
 
                 let area = node.element.layout(&node, area, depth + 1, document);
+                if fit {
+                    if area.width() > rect.width() {
+                        rect.x1 = rect.x0 + area.width();
+                    }
+                }
 
                 // We round height for that pixel perfection 🤤
                 rect.y1 += area.height().round() + gap_pixels as f64
@@ -320,15 +367,154 @@ impl Element {
             rect
         };
 
+        // Lays out child nodes in a stack
+        let layout_children_vertically_rev = |gap: UnitValue, fit: bool| {
+            // Start the bounds from top up (bounds.y0)
+            let mut rect = Rect::new(
+                bounds.x0,
+                bounds.y1,
+                if fit { bounds.x0 } else { bounds.x1 },
+                bounds.y1,
+            );
+
+            let gap_pixels = match gap {
+                UnitValue::Pixels(p) => p,
+            };
+
+            // Layout each child and add it's requested size to the total area
+            for child in node.children.iter() {
+                let node = child.borrow();
+
+                // The bounds of the space that has not been taken up yet
+                let area = Rect::new(bounds.x0, bounds.y0, bounds.x1, bounds.y1 - rect.height());
+
+                let area = node.element.layout(&node, area, depth + 1, document);
+                if fit {
+                    if area.width() > rect.width() {
+                        rect.x1 = rect.x0 + area.width();
+                    }
+                }
+
+                // We round height for that pixel perfection 🤤
+                rect.y0 -= area.height().round() + gap_pixels as f64
+            }
+            rect
+        };
+
+        // Lays out child nodes in a stack
+        let layout_children_horizontally = |gap: UnitValue, fit: bool| {
+            // Start the bounds from top up (bounds.y0)
+            let mut rect = Rect::new(
+                bounds.x0,
+                bounds.y0,
+                bounds.x0,
+                if fit { bounds.y0 } else { bounds.y1 },
+            );
+
+            // The gap is the space in between child nodes
+            let gap_pixels = match gap {
+                UnitValue::Pixels(p) => p,
+            };
+
+            // Layout each child and add it's requested size to the total area
+            for child in node.children.iter() {
+                let node = child.borrow();
+
+                // The bounds of the space that has not been taken up yet
+                let area = Rect::new(bounds.x0 + rect.width(), bounds.y0, bounds.x1, bounds.y1);
+
+                let area = node.element.layout(&node, area, depth + 1, document);
+                if fit {
+                    if area.height() > rect.height() {
+                        rect.y1 = rect.y0 + area.height();
+                    }
+                }
+
+                // We round height for that pixel perfection 🤤
+                rect.x1 += area.width().round() + gap_pixels as f64
+            }
+            rect
+        };
+
+        // Lays out child nodes in a stack
+        let layout_children_horizontally_rev = |gap: UnitValue, fit: bool| {
+            // Start the bounds from top up (bounds.y0)
+            let mut rect = Rect::new(
+                bounds.x1,
+                bounds.y0,
+                bounds.x1,
+                if fit { bounds.y0 } else { bounds.y1 },
+            );
+
+            // The gap is the space in between child nodes
+            let gap_pixels = match gap {
+                UnitValue::Pixels(p) => p,
+            };
+
+            // Layout each child and add it's requested size to the total area
+            for child in node.children.iter() {
+                let node = child.borrow();
+
+                // The bounds of the space that has not been taken up yet
+                let area = Rect::new(bounds.x0, bounds.y0, bounds.x1 - rect.width(), bounds.y1);
+
+                let area = node.element.layout(&node, area, depth + 1, document);
+                if fit {
+                    if area.height() > rect.height() {
+                        rect.y1 = rect.y0 + area.height();
+                    }
+                }
+
+                // We round height for that pixel perfection 🤤
+                rect.x0 -= area.width().round() + gap_pixels as f64
+            }
+            rect
+        };
+
         let area = match &node.ty {
+            NodeType::Svg(svg) => {
+                println!("{:?} {}", svg.view, svg.view.width());
+                Rect::from_origin_size(
+                    (bounds.x0, bounds.y0),
+                    (svg.view.width(), svg.view.height()),
+                )
+            }
             NodeType::Text(t) => {
                 let mut simple_text = simple_text::SimpleText::new();
                 let tl = simple_text.layout(None, psize!(defaults::TEXT_SIZE), t);
                 Rect::from_origin_size((bounds.x0, bounds.y0), (tl.width(), tl.height()))
             }
-            NodeType::Div | NodeType::Span => layout_children(),
+            NodeType::Div | NodeType::Span => {
+                let gap = StyleValueAs!(node.styles(document, "gap"), Gap)
+                    .unwrap_or(UnitValue::Pixels(defaults::GAP));
+
+                let direction = StyleValueAs!(node.styles(document, "direction"), Direction)
+                    .unwrap_or(defaults::DIRECTION);
+
+                let fit = true;
+
+                match direction {
+                    Direction::Vertical => layout_children_vertically(gap, fit),
+                    Direction::VerticalReverse => layout_children_vertically_rev(gap, fit),
+                    Direction::Horizontal => layout_children_horizontally(gap, fit),
+                    Direction::HorizontalReverse => layout_children_horizontally_rev(gap, fit),
+                }
+            }
             NodeType::Body => {
-                layout_children();
+                let gap = StyleValueAs!(node.styles(document, "gap"), Gap)
+                    .unwrap_or(UnitValue::Pixels(defaults::GAP));
+
+                let direction = StyleValueAs!(node.styles(document, "direction"), Direction)
+                    .unwrap_or(defaults::DIRECTION);
+
+                let fit = false;
+                match direction {
+                    Direction::Vertical => layout_children_vertically(gap, fit),
+                    Direction::VerticalReverse => layout_children_vertically_rev(gap, fit),
+                    Direction::Horizontal => layout_children_horizontally(gap, fit),
+                    Direction::HorizontalReverse => layout_children_horizontally_rev(gap, fit),
+                };
+
                 /* Only difference in body is in keeps the max size */
                 bounds
             }
@@ -373,8 +559,12 @@ impl Element {
         let background_color =
             StyleValueAs!(node.styles(document, "backgroundColor"), BackgroundColor);
         let border_color = StyleValueAs!(node.styles(document, "borderColor"), BorderColor);
+        let border_width =
+            StyleValueAs!(node.styles(document, "borderWidth"), BorderWidth).unwrap_or_default();
+
         let foreground_color =
             StyleValueAs!(node.styles(document, "foregroundColor"), ForegroundColor);
+
         let radius = StyleValueAs!(node.styles(document, "radius"), Radius);
 
         let radius: Option<RoundedRectRadii> = radius.map(|rad| rad.try_into().unwrap());
@@ -383,22 +573,33 @@ impl Element {
             // If we have a radius, draw it instead
             if let Some(radius) = radius {
                 let rounded = RoundedRect::from_rect(layout.border_rect, radius);
-                dctx.builder.fill(
-                    neb_graphics::vello::peniko::Fill::NonZero,
-                    Affine::IDENTITY,
-                    color,
-                    None,
-                    &rounded,
-                );
+                // dctx.builder.fill(
+                //     neb_graphics::vello::peniko::Fill::NonZero,
+                //     Affine::IDENTITY,
+                //     color,
+                //     None,
+                //     &rounded,
+                // );
             } else {
+                // let width = match border_width {
+                //     UnitValue::Pixels(p) => p,
+                // };
+                let r: Rect = border_width.try_into().unwrap();
                 // No radius
-                dctx.builder.fill(
-                    neb_graphics::vello::peniko::Fill::NonZero,
+                dctx.builder.stroke(
+                    &Stroke::new(r.x0 as _),
                     Affine::IDENTITY,
                     color,
                     None,
                     &layout.border_rect,
                 );
+                // dctx.builder.fill(
+                //     neb_graphics::vello::peniko::Fill::NonZero,
+                //     Affine::IDENTITY,
+                //     color,
+                //     None,
+                //     &layout.border_rect,
+                // );
             }
         }
 
@@ -464,6 +665,43 @@ impl Element {
         };
 
         match &node.ty {
+            NodeType::Svg(svg) => {
+                for item in &svg.items {
+                    match item {
+                        svg::Item::Fill(fill) => {
+                            dctx.builder.fill(
+                                Fill::NonZero,
+                                Affine::IDENTITY,
+                                fill.color,
+                                None,
+                                &fill.path,
+                            );
+                        }
+                        svg::Item::Stroke(stroke) => {
+                            dctx.builder.stroke(
+                                &Stroke::new(stroke.width as f32),
+                                Affine::IDENTITY,
+                                stroke.color,
+                                None,
+                                &stroke.path,
+                            );
+                        }
+                        svg::Item::Path(path) => {
+                            dctx.builder.fill(
+                                neb_graphics::vello::peniko::Fill::NonZero,
+                                Affine::translate(Vec2::new(-svg.view.x0, -svg.view.y0))
+                                    * Affine::translate(Vec2::new(
+                                        layout.content_rect.x0,
+                                        layout.content_rect.y0,
+                                    )),
+                                &Brush::Solid(foreground_color),
+                                None,
+                                &path,
+                            );
+                        }
+                    }
+                }
+            }
             NodeType::Text(t) => {
                 dctx.text.add(
                     &mut dctx.builder,

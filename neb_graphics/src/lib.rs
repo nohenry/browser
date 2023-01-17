@@ -76,8 +76,8 @@ pub async fn start_graphics_thread(draw: impl Fn(&mut DrawingContext) + 'static)
                 )
                 .expect("failed to render to surface");
             surface_texture.present();
-            render_cx.device.poll(wgpu::Maintain::Wait);
-            // render_cx.device.poll(wgpu::MaintainBase::Poll);
+            // render_cx.device.poll(wgpu::Maintain::Wait);
+            render_cx.device.poll(wgpu::MaintainBase::Poll);
         }
         _ => {}
     });

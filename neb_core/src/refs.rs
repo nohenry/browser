@@ -28,13 +28,13 @@ impl<T> Deref for Rf<T> {
     }
 }
 
-impl<T: std::fmt::Debug> Rf<T> {
+impl<T> Rf<T> {
     pub fn new(t: T) -> Rf<T> {
         Rf(Rc::new(RefCell::new(t)))
     }
 }
 
-impl<T: std::fmt::Debug> From<T> for Rf<T> {
+impl<T> From<T> for Rf<T> {
     fn from(t: T) -> Self {
         Rf::new(t)
     }

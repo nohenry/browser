@@ -8,7 +8,8 @@ use neb_core::{
 };
 
 fn main() {
-    let file = File::open("text.html").unwrap();
+    env_logger::init();
+    let file = File::open("text.smf").unwrap();
     let file = BufReader::new(file);
 
     let document = parse_from_stream(file);

@@ -22,6 +22,8 @@ pub mod styling;
 
 mod rectr;
 
+mod svg;
+
 #[cfg(test)]
 mod tests {
 

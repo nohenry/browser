@@ -1,4 +1,5 @@
 use std::collections::hash_map::Values;
+use std::collections::HashSet;
 use std::fmt::{Debug, Display};
 use std::hash::Hash;
 use std::{
@@ -30,6 +31,22 @@ use nom::{AsChar, FindToken, InputTakeAtPosition};
 
 use crate::Rf;
 
+#[derive(Debug, Clone, Copy)]
+pub enum Direction {
+    Vertical,
+    Horizontal,
+    VerticalReverse,
+    HorizontalReverse,
+}
+
+lazy_static::lazy_static! {
+    static ref INHERITED: HashSet<&'static str> = HashSet::from(["foregroundColor"]);
+}
+
+pub fn is_inherited(key: &str) -> bool {
+    INHERITED.contains(key)
+}
+
 #[derive(EnumHash, Debug, Clone)]
 pub enum StyleValue {
     /* Colors */
@@ -37,13 +54,13 @@ pub enum StyleValue {
     ForegroundColor { color: Color },
 
     BorderWidth { rect: UnitRect },
-    BorderRadius { rect: UnitRect },
     BorderColor { color: Color },
 
     /* Sizing */
     Gap { amount: UnitValue },
     Padding { rect: UnitRect },
     Radius { rect: UnitRect },
+    Direction { direction: Direction },
 
     Empty,
 }
@@ -67,13 +84,6 @@ macro_rules! StyleValueAs {
   ($e:expr,BorderWidth) => {
     match$e {
       StyleValue::BorderWidth {
-        rect
-      } => Some((rect)),_ => None,
-    }
-  };
-  ($e:expr,BorderRadius) => {
-    match$e {
-      StyleValue::BorderRadius {
         rect
       } => Some((rect)),_ => None,
     }
@@ -104,6 +114,13 @@ macro_rules! StyleValueAs {
       StyleValue::Radius {
         rect
       } => Some((rect)),_ => None,
+    }
+  };
+    ($e:expr,Direction) => {
+    match$e {
+      StyleValue::Direction {
+        direction
+      } => Some((direction)),_ => None,
     }
   };
 }
@@ -216,6 +233,10 @@ pub fn parse_value(bytes: &[u8]) -> IResult<&[u8], (String, StyleValue)> {
             let (bytes, value) = parse_rect(val)?;
             (bytes, StyleValue::Radius { rect: value })
         }
+        StyleValueHashes::Direction => {
+            let (bytes, value) = parse_direction(val)?;
+            (bytes, StyleValue::Direction { direction: value })
+        }
         _ => panic!(),
     };
 
@@ -260,7 +281,8 @@ pub fn parse_hex(bytes: &[u8]) -> IResult<&[u8], Color> {
 
                     let r1 = it.next().unwrap();
                     let r2 = it.next().unwrap();
-                    let r = char_to_hex(r1) << 4 | char_to_hex(r2);
+                    let p = char_to_hex(r1);
+                    let r = p << 4 | char_to_hex(r2);
 
                     let g1 = it.next().unwrap();
                     let g2 = it.next().unwrap();
@@ -274,7 +296,7 @@ pub fn parse_hex(bytes: &[u8]) -> IResult<&[u8], Color> {
                 } else {
                     Err(nom::Err::Error(nom::error::Error::new(
                         bytes,
-                        nom::error::ErrorKind::SeparatedList,
+                        nom::error::ErrorKind::Char,
                     )))
                 }
             }, // pair(
@@ -289,6 +311,24 @@ pub fn parse_hex(bytes: &[u8]) -> IResult<&[u8], Color> {
                //     (hi << 4) & lo
                // },
         ),
+    )(bytes)
+}
+
+pub fn parse_direction(bytes: &[u8]) -> IResult<&[u8], Direction> {
+    map(
+        alt((
+            tag("Vertical"),
+            tag("VerticalReverse"),
+            tag("Horizontal"),
+            tag("HorizontalReverse"),
+        )),
+        |val| match std::str::from_utf8(val).unwrap() {
+            "Vertical" => Direction::Vertical,
+            "VerticalReverse" => Direction::VerticalReverse,
+            "Horizontal" => Direction::Horizontal,
+            "HorizontalReverse" => Direction::HorizontalReverse,
+            _ => panic!(),
+        },
     )(bytes)
 }
 
@@ -312,6 +352,12 @@ pub enum UnitValue {
     Pixels(f64),
 }
 
+impl Default for UnitValue {
+    fn default() -> Self {
+        UnitValue::Pixels(0.0)
+    }
+}
+
 impl Debug for UnitValue {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self)
@@ -326,7 +372,7 @@ impl Display for UnitValue {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Default)]
 pub struct UnitRect {
     x0: UnitValue,
     y0: UnitValue,
@@ -384,7 +430,7 @@ where
 fn char_to_hex(c: char) -> u8 {
     let c = c.to_ascii_lowercase() as u8;
     if c >= b'a' {
-        c - b'a'
+        c - b'a' + 9
     } else {
         c - b'0'
     }
