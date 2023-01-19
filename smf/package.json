@@ -1,0 +1,25 @@
+{
+  "name": "smf",
+  "displayName": "Structured Markup Format",
+  "description": "Syntax highlighting for smf",
+  "version": "0.0.1",
+  "engines": {
+    "vscode": "^1.74.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "contributes": {
+    "languages": [{
+      "id": "smf",
+      "aliases": ["Structured Markup Format", "smf"],
+      "extensions": [".smf"],
+      "configuration": "./language-configuration.json"
+    }],
+    "grammars": [{
+      "language": "smf",
+      "scopeName": "source.smf",
+      "path": "./syntaxes/smf.tmLanguage.json"
+    }]
+  }
+}

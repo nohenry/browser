@@ -24,10 +24,11 @@ pub async fn start_graphics_thread(draw: impl Fn(&mut DrawingContext) + 'static)
         .build(&event_loop)
         .unwrap();
 
-    let render_cx = RenderContext::new().await?;
+    let mut render_cx = RenderContext::new();
     let size = window.inner_size();
-    let mut surface = render_cx.create_surface(&window, size.width, size.height);
-    let mut renderer = Renderer::new(&render_cx.device)?;
+    let mut surface = render_cx.create_surface(&window, size.width, size.height).await?;
+    let mut device_handle = &render_cx.devices[surface.dev_id];
+    let mut renderer = Renderer::new(&device_handle.device)?;
 
     // let mut simple_text = simple_text::SimpleText::new();
 
@@ -52,6 +53,8 @@ pub async fn start_graphics_thread(draw: impl Fn(&mut DrawingContext) + 'static)
             let width = surface.config.width;
             let height = surface.config.height;
 
+            let mut device_handle = &render_cx.devices[surface.dev_id];
+
             let mut dctx = DrawingContext {
                 builder: SceneBuilder::for_scene(&mut scene),
                 text: SimpleText::new(),
@@ -67,8 +70,8 @@ pub async fn start_graphics_thread(draw: impl Fn(&mut DrawingContext) + 'static)
                 .expect("failed to get surface texture");
             renderer
                 .render_to_surface(
-                    &render_cx.device,
-                    &render_cx.queue,
+                    &device_handle.device,
+                    &device_handle.queue,
                     &scene,
                     &surface_texture,
                     width,
@@ -77,7 +80,7 @@ pub async fn start_graphics_thread(draw: impl Fn(&mut DrawingContext) + 'static)
                 .expect("failed to render to surface");
             surface_texture.present();
             // render_cx.device.poll(wgpu::Maintain::Wait);
-            render_cx.device.poll(wgpu::MaintainBase::Poll);
+            device_handle.device.poll(wgpu::MaintainBase::Wait);
         }
         _ => {}
     });

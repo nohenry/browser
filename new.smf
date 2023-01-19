@@ -11,7 +11,7 @@ style {
 body {
     This is some text
     
-    div(class: [large, centered]) {
+    view(class: [large, centered]) {
         
     }
 }
