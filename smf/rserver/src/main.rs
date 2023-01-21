@@ -1,7 +1,8 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::RwLock;
 
-use neb_smf::ast::{Expression, Statement};
+use neb_smf::ast::{AstNode, Expression, Statement};
+use neb_smf::token::Span;
 use neb_smf::Module;
 use tower_lsp::jsonrpc::Result;
 use tower_lsp::lsp_types::request::Request;
@@ -72,6 +73,7 @@ impl SemanticTokenBuilder {
 // #[derive(Debug)]
 struct Backend {
     // semantic_types: HashSet<&'static SemanticTokenType>,
+    element_names: HashSet<String>,
     documents: RwLock<HashMap<Url, Module>>,
     client: Client,
 }
@@ -131,6 +133,79 @@ impl Backend {
             Statement::Expression(e) => self.recurse_expression(e, builder),
         }
     }
+
+    fn bsearch_expression(&self, item: &Expression, span: &Span) -> Option<Vec<CompletionItem>> {
+        match item {
+            Expression::Ident(i) => {
+                if i.0.contains(span) {
+                    return Some(vec![CompletionItem::new_simple(
+                        "Potato".into(),
+                        "lfkjsdofi".into(),
+                    )]);
+                }
+            }
+        }
+        None
+    }
+
+    fn bsearch_statement(&self, item: &Statement, span: &Span) -> Option<Vec<CompletionItem>> {
+        match item {
+            Statement::Expression(e) => {
+                if e.get_range().contains(span) {
+                    return self.bsearch_expression(e, span);
+                }
+            }
+            Statement::Element {
+                arguments,
+                body,
+                body_range,
+                token,
+                ..
+            } => {
+                if token.span().before(span) {
+                    return Some(
+                        self.element_names
+                            .iter()
+                            .map(|name| CompletionItem {
+                                label: name.into(),
+                                kind: Some(CompletionItemKind::PROPERTY),
+                                ..Default::default()
+                            })
+                            .collect(),
+                    );
+                } else if body_range.contains(span) {
+                    for stmt in body {
+                        if let Some(s) = self.bsearch_statement(stmt, span) {
+                            return Some(s);
+                        } else {
+                            return Some(
+                                self.element_names
+                                    .iter()
+                                    .map(|name| CompletionItem {
+                                        label: name.into(),
+                                        kind: Some(CompletionItemKind::PROPERTY),
+                                        ..Default::default()
+                                    })
+                                    .collect(),
+                            );
+                        }
+                    }
+                }
+
+                if let Some(args) = arguments {
+                    for item in args.items.iter_items() {
+                        if item.get_range().contains(span) {
+                            return Some(vec![CompletionItem::new_simple(
+                                "Arg".into(),
+                                "JFlkdsjfoi".into(),
+                            )]);
+                        }
+                    }
+                }
+            }
+        }
+        None
+    }
 }
 
 #[tower_lsp::async_trait]
@@ -157,13 +232,11 @@ impl LanguageServer for Backend {
                         },
                     ),
                 ),
-                // completion_provider: Some(CompletionOptions {
-                //     resolve_provider: Some(false),
-                //     trigger_characters: Some(vec![".".to_string()]),
-                //     work_done_progress_options: Default::default(),
-                //     all_commit_characters: None,
-                //     ..Default::default()
-                // }),
+                completion_provider: Some(CompletionOptions {
+                    resolve_provider: Some(true),
+                    // trigger_characters: Some(vec![".".to_string()]),
+                    ..Default::default()
+                }),
                 workspace: Some(WorkspaceServerCapabilities {
                     workspace_folders: Some(WorkspaceFoldersServerCapabilities {
                         supported: Some(true),
@@ -199,18 +272,76 @@ impl LanguageServer for Backend {
             (builder.build(), mods.stmts.format())
         };
 
-        self.client
-            .log_message(MessageType::INFO, format!("toks {}", s))
-            .await;
-
-        self.client
-            .log_message(MessageType::INFO, format!("toks {:?}", toks))
-            .await;
-
         Ok(Some(SemanticTokensResult::Tokens(SemanticTokens {
             data: toks,
             result_id: None,
         })))
+    }
+
+    async fn completion(&self, params: CompletionParams) -> Result<Option<CompletionResponse>> {
+        self.client
+            .log_message(
+                MessageType::INFO,
+                format!("completino {:?}", params.text_document_position.position),
+            )
+            .await;
+        let res = {
+            let map = &*self.documents.read().unwrap();
+            let Some(mods) = map.get(&params.text_document_position.text_document.uri) else {
+                return Ok(None)
+            };
+            let sp = Span {
+                line_num: params.text_document_position.position.line,
+                position: params.text_document_position.position.character,
+                ..Default::default()
+            };
+
+            let items = mods
+                .stmts
+                .iter()
+                .find_map(|f| self.bsearch_statement(f, &sp));
+
+            if let None = items {
+                if mods
+                    .stmts
+                    .iter()
+                    .find(|f| f.get_range().contains(&sp))
+                    .is_none()
+                {
+                    Some(
+                        self.element_names
+                            .iter()
+                            .map(|name| CompletionItem {
+                                label: name.into(),
+                                kind: Some(CompletionItemKind::PROPERTY),
+                                ..Default::default()
+                            })
+                            .collect(),
+                    )
+                } else {
+                    items
+                }
+            } else {
+                items
+            }
+        };
+        self.client
+            .log_message(MessageType::INFO, format!("completino {:?}", res))
+            .await;
+
+        if let Some(items) = res {
+            // return Ok(Some(CompletionResponse::List(CompletionList {
+            //     is_incomplete: true,
+            //     items,
+            // })));
+            return Ok(Some(CompletionResponse::Array(items)));
+        } else {
+            return Ok(None);
+        }
+    }
+
+    async fn completion_resolve(&self, params: CompletionItem) -> Result<CompletionItem> {
+        Ok(params)
     }
 
     async fn initialized(&self, _p: InitializedParams) {
@@ -228,7 +359,7 @@ impl LanguageServer for Backend {
 
         (*(self.documents.write().unwrap())).insert(params.text_document.uri, out.0);
 
-        self.client.semantic_tokens_refresh().await.unwrap();
+        // self.client.semantic_tokens_refresh().await.unwrap();
     }
 
     async fn did_change(&self, params: DidChangeTextDocumentParams) {
@@ -244,7 +375,7 @@ impl LanguageServer for Backend {
 
         (*(self.documents.write().unwrap())).insert(params.text_document.uri, out.0);
 
-        self.client.semantic_tokens_refresh().await.unwrap();
+        // self.client.semantic_tokens_refresh().await.unwrap();
     }
 
     async fn shutdown(&self) -> Result<()> {
@@ -258,6 +389,7 @@ async fn main() {
     let stdout = tokio::io::stdout();
 
     let (service, socket) = LspService::new(|client| Backend {
+        element_names: HashSet::from_iter(["style".into(), "view".into(), "setup".into()]),
         documents: RwLock::new(HashMap::new()),
         client,
     });

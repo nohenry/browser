@@ -3,11 +3,15 @@ use crate::{
     token::{Range, SpannedToken, Token},
 };
 
-pub struct PunctuationList<T> {
+pub trait AstNode {
+    fn get_range(&self) -> Range;
+}
+
+pub struct PunctuationList<T: AstNode> {
     tokens: Vec<(T, Option<SpannedToken>)>,
 }
 
-impl<T> PunctuationList<T> {
+impl<T: AstNode> PunctuationList<T> {
     pub fn new() -> PunctuationList<T> {
         PunctuationList { tokens: Vec::new() }
     }
@@ -31,7 +35,7 @@ impl<T> PunctuationList<T> {
 
 impl<T> NodeDisplay for PunctuationList<T>
 where
-    T: NodeDisplay,
+    T: NodeDisplay + AstNode,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         f.write_str("Punctuation List")?;
@@ -41,7 +45,7 @@ where
 
 impl<T> TreeDisplay for PunctuationList<T>
 where
-    T: TreeDisplay,
+    T: TreeDisplay + AstNode,
 {
     fn num_children(&self) -> usize {
         if let Some((_, Some(_))) = self.tokens.last() {
@@ -64,6 +68,12 @@ where
 pub struct ElementArgs {
     pub range: Range,
     pub items: PunctuationList<Arg>,
+}
+
+impl AstNode for ElementArgs {
+    fn get_range(&self) -> Range {
+        self.range 
+    }
 }
 
 impl ElementArgs {
@@ -96,6 +106,12 @@ pub struct Arg {
     pub name: SpannedToken,
     pub colon: SpannedToken,
     pub value: Expression,
+}
+
+impl AstNode for Arg {
+    fn get_range(&self) -> Range {
+        Range::from((&self.name, &self.value.get_range())) 
+    }
 }
 
 impl Arg {
@@ -132,6 +148,14 @@ pub enum Expression {
     Ident(SpannedToken),
 }
 
+impl AstNode for Expression {
+    fn get_range(&self) -> Range {
+        match self {
+            Self::Ident(i) => i.0.into(),
+        }
+    }
+}
+
 impl NodeDisplay for Expression {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
@@ -163,6 +187,17 @@ pub enum Statement {
         body_range: Range,
         token: SpannedToken,
     },
+}
+
+impl AstNode for Statement {
+    fn get_range(&self) -> Range {
+        match self {
+            Self::Expression(e) => e.get_range(),
+            Self::Element {
+                body_range, token, ..
+            } => Range::from((token, body_range)),
+        }
+    }
 }
 
 impl NodeDisplay for Statement {

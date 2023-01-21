@@ -130,7 +130,7 @@ impl<'a> TreeDisplay for SpannedToken {
     }
 }
 
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct Span {
     pub line_num: u32,
     pub position: u32,
@@ -138,10 +138,61 @@ pub struct Span {
     pub token_index: u32,
 }
 
-#[derive(Debug, Clone, Copy, Default)]
-pub struct Range {
-    pub start: Span,
-    pub end: Span,
+impl Span {
+    pub fn contains(&self, other: &Span) -> bool {
+        if self.line_num == other.line_num {
+            if other.position < self.position + self.length {
+                return true;
+            }
+        }
+        false
+    }
+
+    pub fn before(&self, other: &Span) -> bool {
+        if self.line_num == other.line_num {
+            if other.position >= self.position + self.length {
+                return true;
+            }
+        }
+        false
+    }
+
+    pub fn right_before(&self, other: &Span) -> bool {
+        if self.line_num == other.line_num {
+            if other.position == self.position + self.length {
+                return true;
+            }
+        }
+        false
+    }
+}
+
+impl From<SpannedToken> for Span {
+    fn from(value: SpannedToken) -> Self {
+        value.0
+    }
+}
+
+impl From<&SpannedToken> for Span {
+    fn from(value: &SpannedToken) -> Self {
+        value.0
+    }
+}
+
+impl Ord for Span {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.partial_cmp(other).unwrap()
+    }
+}
+
+impl PartialOrd for Span {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        match self.line_num.partial_cmp(&other.line_num) {
+            Some(core::cmp::Ordering::Equal) => {}
+            ord => return ord,
+        }
+        self.position.partial_cmp(&other.position)
+    }
 }
 
 impl NodeDisplay for Span {
@@ -161,6 +212,68 @@ impl TreeDisplay for Span {
 
     fn child_at(&self, _index: usize) -> Option<&dyn TreeDisplay> {
         panic!()
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+pub struct Range {
+    pub start: Span,
+    pub end: Span,
+}
+
+impl Range {
+    pub fn new(start: Span, end: Span) -> Range {
+        Range { start, end }
+    }
+
+    pub fn contains(&self, span: &Span) -> bool {
+        span >= &self.start && span <= &self.end
+    }
+}
+
+impl<T> From<(&Range, T)> for Range
+where
+    T: Into<Span>,
+{
+    fn from(value: (&Range, T)) -> Self {
+        Range {
+            start: value.0.start,
+            end: value.1.into(),
+        }
+    }
+}
+
+impl<T> From<(T, &Range)> for Range
+where
+    T: Into<Span>,
+{
+    fn from(value: (T, &Range)) -> Self {
+        Range {
+            start: value.0.into(),
+            end: value.1.end,
+        }
+    }
+}
+
+impl<T, U> From<(T, U)> for Range
+where
+    T: Into<Span>,
+    U: Into<Span>,
+{
+    fn from(value: (T, U)) -> Self {
+        Range {
+            start: value.0.into(),
+            end: value.1.into(),
+        }
+    }
+}
+
+impl From<Span> for Range {
+    fn from(value: Span) -> Self {
+        Range {
+            start: value,
+            end: value,
+        }
     }
 }
 

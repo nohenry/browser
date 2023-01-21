@@ -1,7 +1,13 @@
 style {
-    body {
-        center (index: jop) {
-        
+    view {
+        setup (index: jop) {
+            
         }
     }
+
+    setup {
+        
+    } 
 }
+
+

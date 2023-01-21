@@ -25,13 +25,6 @@
 				"configuration": "./language-configuration.json"
 			}
 		],
-		"grammars": [
-			{
-				"language": "smf",
-				"scopeName": "source.smf",
-				"path": "./syntaxes/smf.tmLanguage.json"
-			}
-		],
 		"configuration": {
 			"type": "object",
 			"title": "Example configuration",
