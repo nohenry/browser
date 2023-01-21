@@ -5,6 +5,23 @@
     "version": "0.2.0",
     "configurations": [
         {
+            "type": "extensionHost",
+            "request": "launch",
+            "name": "Launch Client",
+            "runtimeExecutable": "${execPath}",
+            "args": [
+                "--extensionDevelopmentPath=${workspaceRoot}/smf"
+            ],
+            "outFiles": [
+                "${workspaceRoot}/smf/client/out/**/*.js"
+            ],
+            "autoAttachChildProcesses": true,
+            "preLaunchTask": {
+                "type": "npm",
+                "script": "watch"
+            }
+        },
+        {
             "type": "lldb",
             "request": "launch",
             "name": "Debug executable 'browser'",

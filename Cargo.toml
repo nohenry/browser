@@ -1,11 +1,12 @@
 [workspace]
-members = ["browser", "neb_core", "neb_errors", "neb_graphics", "neb_macros"]
+members = ["browser", "neb_core", "neb_errors", "neb_graphics", "neb_macros", "neb_smf", "smf/rserver"]
 resolver = "2"
 
 [patch.crates-io]
 # Required for metal support to work on wgpu
 # TODO: remove when wgpu is upgraded to 0.15
 # naga = { git = "https://github.com/gfx-rs/naga", rev = "ddcd5d3121150b2b1beee6e54e9125ff31aaa9a2" }
-wgpu = { git = "https://github.com/gfx-rs/wgpu.git" }
-vello = { path = "../../vello" }
-# vello = { git = "https://github.com/linebender/vello.git" }
+# wgpu = { git = "https://github.com/gfx-rs/wgpu.git" }
+# wgpu = "0.14.2"
+# vello = { path = "../../vello" }
+vello = { git = "https://github.com/linebender/vello.git" }

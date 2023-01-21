@@ -24,9 +24,9 @@ pub async fn start_graphics_thread(draw: impl Fn(&mut DrawingContext) + 'static)
         .build(&event_loop)
         .unwrap();
 
-    let mut render_cx = RenderContext::new();
+    let mut render_cx = RenderContext::new()?;
     let size = window.inner_size();
-    let mut surface = render_cx.create_surface(&window, size.width, size.height).await?;
+    let mut surface = render_cx.create_surface(&window, size.width, size.height).await;
     let mut device_handle = &render_cx.devices[surface.dev_id];
     let mut renderer = Renderer::new(&device_handle.device)?;
 

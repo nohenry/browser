@@ -7,7 +7,8 @@ resolver = "2"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-wgpu = { git = "https://github.com/gfx-rs/wgpu.git" }
+# wgpu = { git = "https://github.com/gfx-rs/wgpu.git" }
+wgpu = "0.14"
 # piet-wgsl = { git = "https://github.com/linebender/piet-gpu.git" }
 # piet-scene = { git = "https://github.com/linebender/piet-gpu.git" }
 # vello = { git = "https://github.com/linebender/vello.git" }
