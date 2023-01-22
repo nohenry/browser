@@ -3,8 +3,83 @@ use crate::{
     token::{Range, SpannedToken, Token},
 };
 
-pub trait AstNode {
+pub trait AstNode: TreeDisplay {
     fn get_range(&self) -> Range;
+}
+
+impl<T> NodeDisplay for Option<T>
+where
+    T: NodeDisplay,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            Some(v) => v.fmt(f),
+            _ => f.write_str(""),
+        }
+    }
+}
+
+macro_rules! addup {
+    ($($e:expr),*) => {{
+        $((if let Some(_) = $e { 1 } else { 0 })+)* 0
+    }};
+}
+
+macro_rules! switchon {
+    ($index:expr, $($e:expr),*) => {{
+        let mut ind = 0;
+        $(if let Some(v) = $e {
+            if $index == ind {
+                return Some(v)
+            }
+            ind += 1;
+        })*
+        ind
+    }};
+}
+
+// impl<T> TreeDisplay for Option<T>
+// where
+//     T: TreeDisplay + NodeDisplay,
+// {
+//     fn num_children(&self) -> usize {
+//         match self {
+//             Some(s) => s.num_children(),
+//             _ => 0,
+//         }
+//     }
+
+//     fn child_at(&self, index: usize) -> Option<&dyn TreeDisplay> {
+//         match self {
+//             Some(s) => s.child_at(index),
+//             _ => None,
+//         }
+//     }
+//     fn child_at_bx<'a>(&'a self, index: usize) -> Box<dyn TreeDisplay + 'a> {
+//         match self {
+//             Some(s) => s.child_at_bx(index),
+//             _ => panic!(),
+//         }
+//     }
+// }
+
+// impl<T> AstNode for Option<T>
+// where
+//     T: AstNode + TreeDisplay,
+// {
+//     fn get_range(&self) -> Range {
+//         if let Some(s) = self {
+//             s.get_range()
+//         } else {
+//             Range::default()
+//         }
+//     }
+// }
+
+impl AstNode for SpannedToken {
+    fn get_range(&self) -> Range {
+        self.0.into()
+    }
 }
 
 pub struct PunctuationList<T: AstNode> {
@@ -31,6 +106,10 @@ impl<T: AstNode> PunctuationList<T> {
     pub fn iter_items(&self) -> impl Iterator<Item = &T> + '_ {
         self.tokens.iter().map(|(v, _)| v)
     }
+
+    pub fn iter(&self) -> impl Iterator<Item = &(T, Option<SpannedToken>)> + '_ {
+        self.tokens.iter()
+    }
 }
 
 impl<T> NodeDisplay for PunctuationList<T>
@@ -50,8 +129,10 @@ where
     fn num_children(&self) -> usize {
         if let Some((_, Some(_))) = self.tokens.last() {
             self.tokens.len() * 2
-        } else {
+        } else if self.tokens.len() > 0 {
             self.tokens.len() * 2 - 1
+        } else {
+            0
         }
     }
 
@@ -72,7 +153,7 @@ pub struct ElementArgs {
 
 impl AstNode for ElementArgs {
     fn get_range(&self) -> Range {
-        self.range 
+        self.range
     }
 }
 
@@ -103,21 +184,26 @@ impl TreeDisplay for ElementArgs {
 }
 
 pub struct Arg {
-    pub name: SpannedToken,
-    pub colon: SpannedToken,
-    pub value: Expression,
+    pub name: Option<SpannedToken>,
+    pub colon: Option<SpannedToken>,
+    pub value: Option<Expression>,
 }
 
 impl AstNode for Arg {
     fn get_range(&self) -> Range {
-        Range::from((&self.name, &self.value.get_range())) 
+        match (&self.name, &self.colon, &self.value) {
+            (Some(name), Some(colon), None) => Range::from((name, colon)),
+            (Some(name), None, Some(value)) => Range::from((name, &value.get_range())),
+            (None, Some(colon), Some(value)) => Range::from((colon, &value.get_range())),
+            _ => Range::default(),
+        }
     }
 }
 
 impl Arg {
     pub fn name(&self) -> &String {
-        match &self.name.1 {
-            Token::Ident(s) => s,
+        match &self.name {
+            Some(SpannedToken(_, Token::Ident(s))) => s,
             _ => panic!(),
         }
     }
@@ -131,16 +217,19 @@ impl NodeDisplay for Arg {
 
 impl TreeDisplay for Arg {
     fn num_children(&self) -> usize {
-        3
+        addup!(self.name, self.colon, self.value)
     }
 
     fn child_at(&self, index: usize) -> Option<&dyn TreeDisplay> {
-        match index {
-            0 => Some(&self.name),
-            1 => Some(&self.colon),
-            2 => Some(&self.value),
-            _ => panic!(),
-        }
+        // match index {
+        //     0 => Some(&self.name),
+        //     1 => Some(&self.colon),
+        //     2 => Some(&self.value),
+        //     _ => panic!(),
+        // }
+
+        switchon!(index, &self.name, &self.colon, &self.value);
+        None
     }
 }
 
@@ -178,14 +267,128 @@ impl TreeDisplay for Expression {
     }
 }
 
+pub enum StyleValue {
+    Integer(u64, SpannedToken),
+    Float(f64, SpannedToken),
+    Ident(SpannedToken),
+}
+
+impl AstNode for StyleValue {
+    fn get_range(&self) -> Range {
+        match self {
+            Self::Integer(_, s) => s.0.into(),
+            Self::Float(_, s) => s.0.into(),
+            Self::Ident(s) => s.0.into(),
+        }
+    }
+}
+
+impl NodeDisplay for StyleValue {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            Self::Integer(i, _) => write!(f, "{}", i),
+            Self::Float(i, _) => write!(f, "{}", i),
+            Self::Ident(SpannedToken(_, Token::Ident(i))) => write!(f, "{}", i),
+            _ => panic!(),
+        }
+    }
+}
+
+impl TreeDisplay for StyleValue {
+    fn num_children(&self) -> usize {
+        0
+    }
+
+    fn child_at(&self, _index: usize) -> Option<&dyn TreeDisplay> {
+        None
+    }
+}
+
+pub enum StyleStatement {
+    StyleElement {
+        key: Option<SpannedToken>,
+        colon: Option<SpannedToken>,
+        value: Option<StyleValue>,
+    },
+    Style {
+        body: Vec<StyleStatement>,
+        body_range: Option<Range>,
+        token: Option<SpannedToken>,
+    },
+}
+
+impl AstNode for StyleStatement {
+    fn get_range(&self) -> Range {
+        match self {
+            Self::Style {
+                body_range: Some(body_range),
+                token: Some(token),
+                ..
+            } => Range::from((token, body_range)),
+            Self::Style {
+                body_range: None,
+                token: Some(token),
+                ..
+            } => Range::from(token.0),
+            Self::Style {
+                body_range: Some(body_range),
+                token: None,
+                ..
+            } => body_range.clone(),
+            _ => Range::default(),
+        }
+    }
+}
+
+impl NodeDisplay for StyleStatement {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        f.write_str("Style Statement")
+    }
+}
+
+impl TreeDisplay for StyleStatement {
+    fn num_children(&self) -> usize {
+        match self {
+            Self::StyleElement { key, colon, value } => addup!(key, value),
+            Self::Style {
+                body_range,
+                token,
+                body,
+            } => addup!(body_range, token) + body.len(),
+        }
+    }
+
+    fn child_at(&self, index: usize) -> Option<&dyn TreeDisplay> {
+        match self {
+            Self::StyleElement { key, colon, value } => {
+                switchon!(index, key, value);
+                None
+            }
+            Self::Style {
+                body,
+                body_range,
+                token,
+                ..
+            } => {
+                let ind = switchon!(index, token, body_range);
+                Some(&body[index - ind])
+            }
+        }
+    }
+}
+
 pub enum Statement {
     Expression(Expression),
     Element {
-        name: String,
         arguments: Option<ElementArgs>,
         body: Vec<Statement>,
-        body_range: Range,
-        token: SpannedToken,
+        body_range: Option<Range>,
+        token: Option<SpannedToken>,
+    },
+    Style {
+        body: Vec<StyleStatement>,
+        body_range: Option<Range>,
+        token: Option<SpannedToken>,
     },
 }
 
@@ -194,8 +397,38 @@ impl AstNode for Statement {
         match self {
             Self::Expression(e) => e.get_range(),
             Self::Element {
-                body_range, token, ..
+                body_range: Some(body_range),
+                token: Some(token),
+                ..
             } => Range::from((token, body_range)),
+            Self::Element {
+                body_range: Some(body_range),
+                arguments: Some(arguments),
+                token: None,
+                ..
+            } => Range::from((&arguments.get_range(), body_range)),
+            Self::Element {
+                body_range: Some(body_range),
+                arguments: None,
+                token: None,
+                ..
+            } => body_range.clone(),
+            Self::Style {
+                body_range: Some(body_range),
+                token: Some(token),
+                ..
+            } => Range::from((token, body_range)),
+            Self::Style {
+                body_range: None,
+                token: Some(token),
+                ..
+            } => Range::from(token.0),
+            Self::Style {
+                body_range: Some(body_range),
+                token: None,
+                ..
+            } => body_range.clone(),
+            _ => Range::default(),
         }
     }
 }
@@ -213,7 +446,17 @@ impl NodeDisplay for Statement {
 impl TreeDisplay for Statement {
     fn num_children(&self) -> usize {
         match self {
-            Self::Element { arguments, .. } => 4 + if arguments.is_some() { 1 } else { 0 },
+            Self::Element {
+                arguments,
+                body_range,
+                token,
+                body,
+            } => addup!(arguments, body_range, token) + body.len(),
+            Self::Style {
+                body_range,
+                token,
+                body,
+            } => addup!(body_range, token) + body.len(),
             Self::Expression(_) => 1,
         }
     }
@@ -226,21 +469,29 @@ impl TreeDisplay for Statement {
                 token,
                 arguments,
                 ..
-            } => match index {
-                0 => None,
-                1 => Some(body),
-                2 => Some(body_range),
-                3 => Some(token),
-                4 => Some(arguments.as_ref().unwrap()),
-                _ => panic!(),
-            },
+            } => {
+                let ind = switchon!(index, token, arguments, body_range);
+                Some(&body[index - ind])
+            }
+            Self::Style {
+                body,
+                body_range,
+                token,
+                ..
+            } => {
+                let ind = switchon!(index, token, body_range);
+                Some(&body[index - ind])
+            }
             Self::Expression(e) => Some(e),
         }
     }
 
     fn child_at_bx<'b>(&'b self, index: usize) -> Box<dyn TreeDisplay + 'b> {
         match self {
-            Self::Element { name, .. } => match index {
+            Self::Element {
+                token: Some(SpannedToken(_, Token::Ident(name))),
+                ..
+            } => match index {
                 0 => Box::new(format!("Name: `{}`", name)),
                 _ => panic!(),
             },

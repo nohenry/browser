@@ -1309,6 +1309,11 @@ dependencies = [
 [[package]]
 name = "neb_smf"
 version = "0.1.0"
+dependencies = [
+ "log",
+ "pollster",
+ "tower-lsp",
+]
 
 [[package]]
 name = "nix"
@@ -1734,6 +1739,7 @@ dependencies = [
 name = "rserver"
 version = "0.1.0"
 dependencies = [
+ "log",
  "neb_smf",
  "serde",
  "serde_json",

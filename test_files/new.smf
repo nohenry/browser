@@ -1,13 +1,38 @@
-style {
-    view {
-        setup (index: jop) {
-            
+setup {
+    style {
+        s {
+            color: 4.7
         }
     }
-
-    setup {
-        
-    } 
 }
 
+view {
 
+}
+
+namespace
+type
+class
+enum
+interface
+struct
+typeParameter
+parameter
+variable
+property
+enumMember
+event
+function
+method
+macro
+keyword
+modifier
+comment
+string
+number
+regexp
+operator
+
+view (index: fjklsdf, class: i) {
+
+}

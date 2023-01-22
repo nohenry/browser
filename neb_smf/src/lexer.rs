@@ -74,6 +74,22 @@ impl Lexer {
             }
         }
 
+        let del = match next.map(|c| !(c.is_numeric() || c == '.')) {
+            None => true,
+            Some(t) => t,
+        };
+
+        let cnt = input.chars().fold(0u8, |acc, c| if c == '.' { 1 + acc } else { acc });
+        if input.chars().find(|c| !(c.is_numeric() || *c == '.')).is_none() && cnt <= 1 && del {
+            if cnt == 1 {
+                let val = input.parse().unwrap_or(0.0f64);
+                return Some(Token::Float(val))
+            } else {
+                let val = input.parse().unwrap_or(0u64);
+                return Some(Token::Integer(val))
+            }
+        }
+
         // If the next character is a delimeter
         let del = match next.map(|c| !c.is_alphabetic()) {
             None => true,

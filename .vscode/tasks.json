@@ -14,6 +14,17 @@
 			]
 		},
 		{
+			"label": "build",
+			"args": [
+				"build",
+				"-v",
+				"-p",
+				"rserver"
+			],
+			"command": "cargo",
+			"group": "build",
+		},
+		{
 			"type": "npm",
 			"script": "watch",
 			"isBackground": true,
@@ -25,6 +36,8 @@
 				"panel": "dedicated",
 				"reveal": "never"
 			},
+			"dependsOn": [
+			],
 			"problemMatcher": [
 				"$tsc-watch"
 			]

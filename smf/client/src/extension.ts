@@ -5,6 +5,8 @@
 
 import * as path from 'path';
 import { workspace, ExtensionContext, FileType as VFileType, FileSystemProvider, FileChangeEvent, EventEmitter, Event, Uri, FileSystemError } from 'vscode';
+import * as net from 'net';
+import { exec } from 'child_process'
 
 import {
 	Disposable,
@@ -13,6 +15,7 @@ import {
 	LanguageClientOptions,
 	RequestType,
 	ServerOptions,
+	StreamInfo,
 	TransportKind
 } from 'vscode-languageclient/node';
 
@@ -26,13 +29,18 @@ export function activate(context: ExtensionContext) {
 	);
 	console.log('Helrjowieri')
 
+	let connectionInfo = {
+		port: 5007,
+		host: "127.0.0.1"
+	};
+
 	const ex: Executable = { command: serverModule };
 	// If the extension is launched in debug mode then the debug server options are used
 	// Otherwise the run options are used
-	const serverOptions: ServerOptions = {
-		run: ex,
-		debug: ex
-	};
+	// const serverOptions: ServerOptions = {
+	// 	run: ex,
+	// 	debug: ex
+	// };
 
 	// Options to control the language client
 	const clientOptions: LanguageClientOptions = {
@@ -44,6 +52,38 @@ export function activate(context: ExtensionContext) {
 			fileEvents: workspace.createFileSystemWatcher('**/.clientrc')
 		}
 	};
+
+
+	let serverOptions = () => {
+		return new Promise<StreamInfo>((resolve, reject) => {
+			let ls = exec(`${serverModule}`)
+
+
+
+
+			ls.stdout.on('data', (data) => {
+				console.log('fjsdklf', data)
+				let socket = net.connect(connectionInfo);
+				let result: StreamInfo = {
+					writer: socket,
+					reader: socket
+				};
+				resolve(result)
+			});
+		})
+		// Connect to language server via socket
+		// let ls = exec(`${serverModule}`)
+		// ls.stdout.on('data', function (data) {
+		// 	console.log('stdout: ' + data.toString());
+		// });
+		// let socket = net.connect(connectionInfo);
+		// let result: StreamInfo = {
+		// 	writer: socket,
+		// 	reader: socket
+		// };
+		// return Promise.resolve(result);
+	};
+
 
 	// Create the language client and start the client.
 	client = new LanguageClient(

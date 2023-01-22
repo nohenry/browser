@@ -33,6 +33,8 @@ pub enum Keyword {
 #[derive(Debug, Clone)]
 pub enum Token {
     Ident(String),
+    Integer(u64),
+    Float(f64),
     Operator(Operator),
 
     // Keyword(Keyword),
@@ -45,6 +47,8 @@ impl NodeDisplay for Token {
         match self {
             Self::Ident(s) => f.write_str(s),
             Self::Operator(o) => f.write_str(o.as_str()),
+            Self::Integer(i) => write!(f, "{}", i),
+            Self::Float(fl) => write!(f, "{}", fl),
             Self::Newline => f.write_str("Newline"),
             Self::Whitespace => f.write_str("Whitespace"),
         }
@@ -165,6 +169,24 @@ impl Span {
         }
         false
     }
+
+    pub fn after(&self, other: &Span) -> bool {
+        if self.line_num == other.line_num {
+            if other.position + other.length < self.position {
+                return true;
+            }
+        }
+        false
+    }
+
+    pub fn right_after(&self, other: &Span) -> bool {
+        if self.line_num == other.line_num {
+            if other.position + other.length == self.position {
+                return true;
+            }
+        }
+        false
+    }
 }
 
 impl From<SpannedToken> for Span {
@@ -228,6 +250,15 @@ impl Range {
 
     pub fn contains(&self, span: &Span) -> bool {
         span >= &self.start && span <= &self.end
+    }
+}
+
+impl From<(&Range, &Range)> for Range {
+    fn from(value: (&Range, &Range)) -> Self {
+        Range {
+            start: value.0.start,
+            end: value.1.end,
+        }
     }
 }
 

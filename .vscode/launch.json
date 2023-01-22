@@ -16,10 +16,24 @@
                 "${workspaceRoot}/smf/client/out/**/*.js"
             ],
             "autoAttachChildProcesses": true,
-            "preLaunchTask": {
-                "type": "npm",
-                "script": "watch"
-            }
+            "preLaunchTask": "build"
+            // "preLaunchTask": {
+            //     "task": "buid",
+            // } 
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug executable 'rserver'",
+            "cargo": {
+                "args": [
+                    "build",
+                    "--bin=rserver",
+                    "--package=rserver"
+                ],
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
         },
         {
             "type": "lldb",
@@ -114,6 +128,6 @@
             },
             "args": [],
             "cwd": "${workspaceFolder}"
-        }
+        },
     ]
 }

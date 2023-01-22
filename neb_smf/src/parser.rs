@@ -7,8 +7,8 @@ use crate::{
 };
 
 pub struct Parser {
-    tokens: TokenStream,
-    errors: RwLock<Vec<ParseError>>,
+    pub(crate) tokens: TokenStream,
+    pub(crate) errors: RwLock<Vec<ParseError>>,
 }
 
 impl Parser {
@@ -45,56 +45,93 @@ impl Parser {
 
     pub fn parse_statement(&self) -> Option<Statement> {
         let tok = match self.tokens.peek() {
-            Some(Token::Ident(_)) => self.tokens.next().unwrap(),
-            _ => return None,
+            Some(Token::Ident(_)) => self.tokens.next(),
+            _ => None,
         };
 
         match self.tokens.peek() {
-            Some(Token::Operator(Operator::OpenBrace | Operator::OpenParen)) => {
-                return self.parse_element(tok)
-            }
+            Some(_) => return self.parse_element(tok),
             _ => return None,
         }
     }
 
-    pub fn parse_element(&self, ident: &SpannedToken) -> Option<Statement> {
+    pub fn parse_element(&self, ident: Option<&SpannedToken>) -> Option<Statement> {
         let args = if let Some(Token::Operator(Operator::OpenParen)) = self.tokens.peek() {
             self.parse_args()
         } else {
             None
         };
 
-        let Some(open_brace) = self.expect_operator(Operator::OpenBrace) else {
-            return None;
-        };
-        let mut statements = Vec::new();
-        while let Some(stmt) = self.parse_statement() {
-            statements.push(stmt);
-            if let Some(Token::Operator(Operator::CloseBrace)) = self.tokens.peek() {
-                break;
-            }
-        }
-
-        let Some(close_brace) = self.tokens.next() else {
-            return None;
-        };
-
-        let st = if let Token::Ident(i) = ident.tok() {
-            i.to_string()
+        let open_brace = self.expect_operator(Operator::OpenBrace);
+        let statements = if let Some(Token::Operator(Operator::CloseBrace)) = self.tokens.peek() {
+            vec![]
         } else {
-            return None;
+            match ident {
+                Some(SpannedToken(_, Token::Ident(i))) if &i == &"style" => {
+                    let mut statements = Vec::new();
+                    while let Some(stmt) = self.parse_style_statement() {
+                        statements.push(stmt);
+                        if let Some(Token::Operator(Operator::CloseBrace)) = self.tokens.peek() {
+                            let close_brace = self.tokens.next();
+
+                            return Some(Statement::Style {
+                                body: statements,
+                                body_range: open_brace.zip(close_brace).map(|(o, c)| Range {
+                                    start: o.span().clone(),
+                                    end: c.span().clone(),
+                                }),
+                                token: ident.cloned(),
+                            });
+                        }
+                    }
+                    vec![]
+                }
+                _ => {
+                    let mut statements = Vec::new();
+                    while let Some(stmt) = self.parse_statement() {
+                        statements.push(stmt);
+                        if let Some(Token::Operator(Operator::CloseBrace)) = self.tokens.peek() {
+                            break;
+                        }
+                    }
+                    statements
+                }
+            }
         };
+
+        let close_brace = self.tokens.next();
 
         Some(Statement::Element {
-            name: st,
             arguments: args,
             body: statements,
-            body_range: Range {
-                start: *open_brace.span(),
-                end: *close_brace.span(),
-            },
-            token: ident.clone(),
+            body_range: open_brace.zip(close_brace).map(|(o, c)| Range {
+                start: o.span().clone(),
+                end: c.span().clone(),
+            }),
+            token: ident.cloned(),
         })
+
+        // if let (Some(open), Some(close), Some(st), Some(ident)) =
+        //     (open_brace, close_brace, st, ident)
+        // {
+        //     Some(Statement::Element {
+        //         arguments: args,
+        //         body: statements,
+        //         body_range: Some(Range {
+        //             start: *open.span(),
+        //             end: *close.span(),
+        //         },
+        //         token: ident.clone(),
+        //     }))
+        // } else {
+        //     Some(Statement::PartialElement {
+        //         e: vec![
+        //             Box::new(open_brace.cloned()),
+        //             Box::new(close_brace.cloned()),
+        //             Box::new(ident.cloned()),
+        //         ],
+        //     })
+        // }
     }
 
     fn parse_args(&self) -> Option<ElementArgs> {
@@ -144,7 +181,10 @@ impl Parser {
                 kind: ParseErrorKind::InvalidSyntax(format!("Unable to parse arg brackets!")),
                 range: Range::default(),
             });
-            None
+            Some(ElementArgs {
+                items: args,
+                range: Range::default(),
+            })
         }
     }
 
@@ -153,18 +193,23 @@ impl Parser {
         let colon = self.expect_operator(Operator::Colon);
         let expression = self.parse_expression();
 
-        if let (Some(ident), Some(colon), Some(expr)) = (ident, colon, expression) {
-            Some(Arg {
-                name: ident.clone(),
-                colon: colon.clone(),
-                value: expr,
-            })
-        } else {
-            self.add_error(ParseError {
-                kind: ParseErrorKind::InvalidSyntax(format!("Unable to parse arg fields!")),
-                range: Range::default(),
-            });
-            None
+        match (ident, colon, expression) {
+            (Some(ident), Some(colon), Some(expr)) => Some(Arg {
+                name: Some(ident.clone()),
+                colon: Some(colon.clone()),
+                value: Some(expr),
+            }),
+            (ident, colon, expression) => {
+                self.add_error(ParseError {
+                    kind: ParseErrorKind::InvalidSyntax(format!("Unable to parse arg fields!")),
+                    range: Range::default(),
+                });
+                Some(Arg {
+                    name: ident.cloned(),
+                    colon: colon.cloned(),
+                    value: expression,
+                })
+            }
         }
     }
 
@@ -179,7 +224,7 @@ impl Parser {
         }
     }
 
-    fn expect_operator(&self, operator: Operator) -> Option<&SpannedToken> {
+    pub(crate) fn expect_operator(&self, operator: Operator) -> Option<&SpannedToken> {
         self.ignore_ws();
         let Some(Token::Operator(o)) = self.tokens.peek() else {
             return None;
@@ -198,7 +243,7 @@ impl Parser {
         }
     }
 
-    fn expect(&self, token_type: Token) -> Option<&SpannedToken> {
+    pub(crate) fn expect(&self, token_type: Token) -> Option<&SpannedToken> {
         self.ignore_ws();
         let Some(tok) = self.tokens.peek() else {
             return None;
