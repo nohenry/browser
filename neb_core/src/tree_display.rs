@@ -1,6 +1,6 @@
 use std::{fmt::{self, Display}};
 
-use crate::Rf;
+use neb_util::Rf;
 
 pub struct Fmt<F>(pub F)
 where

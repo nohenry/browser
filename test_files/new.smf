@@ -1,38 +1,13 @@
 setup {
     style {
-        s {
-            color: 4.7
+        centered {
+            direction: Horizontal
+            gap: 50
+            visible: false
         }
     }
 }
 
-view {
-
-}
-
-namespace
-type
-class
-enum
-interface
-struct
-typeParameter
-parameter
-variable
-property
-enumMember
-event
-function
-method
-macro
-keyword
-modifier
-comment
-string
-number
-regexp
-operator
-
-view (index: fjklsdf, class: i) {
+view (class: centered) {
 
 }

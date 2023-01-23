@@ -5,6 +5,7 @@ use std::{
 
 use neb_errors::{DocumentError, DocumentErrorType};
 use neb_graphics::{drawing_context::DrawingContext, vello::kurbo::Rect};
+use neb_util::Rf;
 use nom::{
     bytes::complete::tag,
     character::complete::digit1,
@@ -21,7 +22,6 @@ use crate::{
     styling::{parse_styles, Selector},
     svg::{self, PicoSvg},
     tree_display::TreeDisplay,
-    Rf,
 };
 
 pub fn indent(size: usize) -> String {

@@ -1,5 +1,6 @@
+use neb_util::format::{TreeDisplay, NodeDisplay};
+
 use crate::{
-    format::{NodeDisplay, TreeDisplay},
     token::{Range, SpannedToken, Token},
 };
 
@@ -7,17 +8,7 @@ pub trait AstNode: TreeDisplay {
     fn get_range(&self) -> Range;
 }
 
-impl<T> NodeDisplay for Option<T>
-where
-    T: NodeDisplay,
-{
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        match self {
-            Some(v) => v.fmt(f),
-            _ => f.write_str(""),
-        }
-    }
-}
+
 
 macro_rules! addup {
     ($($e:expr),*) => {{
@@ -186,7 +177,7 @@ impl TreeDisplay for ElementArgs {
 pub struct Arg {
     pub name: Option<SpannedToken>,
     pub colon: Option<SpannedToken>,
-    pub value: Option<Expression>,
+    pub value: Option<Value>,
 }
 
 impl AstNode for Arg {
@@ -267,40 +258,60 @@ impl TreeDisplay for Expression {
     }
 }
 
-pub enum StyleValue {
+pub enum Value {
     Integer(u64, SpannedToken),
     Float(f64, SpannedToken),
     Ident(SpannedToken),
+    Function {
+        ident: Option<SpannedToken>,
+        args: ElementArgs,
+    },
 }
 
-impl AstNode for StyleValue {
+impl AstNode for Value {
     fn get_range(&self) -> Range {
         match self {
             Self::Integer(_, s) => s.0.into(),
             Self::Float(_, s) => s.0.into(),
             Self::Ident(s) => s.0.into(),
+            Self::Function { ident: None, args } => args.get_range(),
+            Self::Function {
+                ident: Some(ident),
+                args,
+            } => Range::from((ident, &args.get_range())),
         }
     }
 }
 
-impl NodeDisplay for StyleValue {
+impl NodeDisplay for Value {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
             Self::Integer(i, _) => write!(f, "{}", i),
             Self::Float(i, _) => write!(f, "{}", i),
             Self::Ident(SpannedToken(_, Token::Ident(i))) => write!(f, "{}", i),
+            Self::Function {
+                ident: Some(SpannedToken(_, Token::Ident(i))),
+                ..
+            } => write!(f, "Function {}", i),
+            Self::Function { ident: None, .. } => write!(f, "Function"),
             _ => panic!(),
         }
     }
 }
 
-impl TreeDisplay for StyleValue {
+impl TreeDisplay for Value {
     fn num_children(&self) -> usize {
-        0
+        match self {
+            Self::Function { args, .. } => 1,
+            _ => 0,
+        }
     }
 
     fn child_at(&self, _index: usize) -> Option<&dyn TreeDisplay> {
-        None
+        match self {
+            Self::Function { args, .. } => Some(args),
+            _ => None,
+        }
     }
 }
 
@@ -308,7 +319,7 @@ pub enum StyleStatement {
     StyleElement {
         key: Option<SpannedToken>,
         colon: Option<SpannedToken>,
-        value: Option<StyleValue>,
+        value: Option<Value>,
     },
     Style {
         body: Vec<StyleStatement>,

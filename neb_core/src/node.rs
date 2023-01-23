@@ -23,8 +23,8 @@ use crate::{
     psize,
     styling::{Selector, StyleValue, UnitValue},
     tree_display::TreeDisplay,
-    Rf,
 };
+use neb_util::Rf;
 
 /// The node type is a specific type of element
 /// The most common element is the `Div` which is for general use case

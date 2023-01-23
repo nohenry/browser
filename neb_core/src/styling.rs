@@ -29,7 +29,7 @@ use nom::{
 };
 use nom::{AsChar, FindToken, InputTakeAtPosition};
 
-use crate::Rf;
+use neb_util::Rf;
 
 #[derive(Debug, Clone, Copy)]
 pub enum Direction {

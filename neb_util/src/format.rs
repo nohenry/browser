@@ -1,4 +1,6 @@
-use std::fmt;
+use std::{borrow::Borrow, cell::{Ref, RefCell}, fmt};
+
+use crate::Rf;
 
 pub struct Fmt<F>(pub F)
 where
@@ -128,5 +130,74 @@ impl TreeDisplay for String {
 
     fn child_at(&self, _index: usize) -> Option<&dyn TreeDisplay> {
         None
+    }
+}
+
+impl<T> NodeDisplay for Option<T>
+where
+    T: NodeDisplay,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            Some(v) => v.fmt(f),
+            _ => f.write_str(""),
+        }
+    }
+}
+
+impl<T> NodeDisplay for Rf<T>
+where
+    T: NodeDisplay,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        self.borrow_mut().fmt(f)
+    }
+}
+
+impl<T> TreeDisplay for Rf<T>
+where
+    T: NodeDisplay + TreeDisplay,
+{
+    fn num_children(&self) -> usize {
+        1
+    }
+
+    fn child_at(&self, index: usize) -> Option<&dyn TreeDisplay> {
+        None
+    }
+
+    fn child_at_bx<'a>(&'a self, index: usize) -> Box<dyn TreeDisplay + 'a> {
+        Box::new(self.0.as_ref().borrow())
+    }
+}
+
+impl<T> NodeDisplay for Ref<'_, T>
+where
+    T: NodeDisplay,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        <T as NodeDisplay>::fmt(&self, f)
+    }
+}
+
+impl<T> TreeDisplay for Ref<'_, T>
+where
+    T: NodeDisplay + TreeDisplay,
+{
+    fn num_children(&self) -> usize {
+        <T as TreeDisplay>::num_children(&self)
+    }
+
+    fn child_at(&self, index: usize) -> Option<&dyn TreeDisplay> {
+        <T as TreeDisplay>::child_at(&self, index)
+    }
+}
+
+impl<T> NodeDisplay for RefCell<T>
+where
+    T: NodeDisplay,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        <T as NodeDisplay>::fmt(&self.borrow(), f)
     }
 }

@@ -1,5 +1,5 @@
 use crate::{
-    ast::{StyleStatement, StyleValue},
+    ast::{StyleStatement, Value},
     parser::Parser,
     token::{Operator, Range, Token},
 };
@@ -41,7 +41,7 @@ impl Parser {
 
         let colon = self.expect_operator(Operator::Colon);
 
-        let value = self.parse_style_value();
+        let value = self.parse_value();
 
         Some(StyleStatement::StyleElement {
             key: key.cloned(),
@@ -50,17 +50,31 @@ impl Parser {
         })
     }
 
-    fn parse_style_value(&self) -> Option<StyleValue> {
+    pub fn parse_value(&self) -> Option<Value> {
         match self.tokens.peek() {
-            Some(Token::Integer(i)) => Some(StyleValue::Integer(
-                *i,
-                self.tokens.next().cloned().unwrap(),
-            )),
-            Some(Token::Float(i)) => {
-                Some(StyleValue::Float(*i, self.tokens.next().cloned().unwrap()))
+            Some(Token::Integer(i)) => {
+                Some(Value::Integer(*i, self.tokens.next().cloned().unwrap()))
             }
-            Some(Token::Ident(i)) => Some(StyleValue::Ident(self.tokens.next().cloned().unwrap())),
+            Some(Token::Float(i)) => Some(Value::Float(*i, self.tokens.next().cloned().unwrap())),
+            Some(Token::Ident(_)) => {
+                let ident = self.tokens.next().unwrap();
+
+                if let Some(Token::Operator(Operator::OpenParen)) = self.tokens.peek() {
+                    return Some(Value::Function {
+                        ident: Some(ident.clone()),
+                        args: self.parse_args().unwrap(),
+                    });
+                } else {
+                    Some(Value::Ident(ident.clone()))
+                }
+            }
             _ => None,
         }
     }
+
+    // fn parse_style_args(&self) -> Vec<Value> {
+    //     let open_paren= self.expect_operator(Operator::OpenParen);
+
+    //     let close_paren= self.expect_operator(Operator::CloseParen);
+    // }
 }

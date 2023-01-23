@@ -1275,6 +1275,7 @@ dependencies = [
  "neb_errors",
  "neb_graphics",
  "neb_macros",
+ "neb_util",
  "nom",
  "rand",
  "roxmltree",
@@ -1311,9 +1312,14 @@ name = "neb_smf"
 version = "0.1.0"
 dependencies = [
  "log",
+ "neb_util",
  "pollster",
  "tower-lsp",
 ]
+
+[[package]]
+name = "neb_util"
+version = "0.1.0"
 
 [[package]]
 name = "nix"

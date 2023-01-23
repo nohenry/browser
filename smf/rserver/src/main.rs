@@ -1,12 +1,13 @@
+#![feature(box_patterns)]
+
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, RwLock};
 
-use log::LevelFilter;
-use neb_smf::ast::{AstNode, Expression, Statement, StyleStatement, StyleValue};
+use neb_smf::ast::{AstNode, Expression, Statement, StyleStatement, Value};
 use neb_smf::logger::ClientLogger;
 use neb_smf::token::{Span, SpannedToken, Token};
 use neb_smf::Module;
-use tokio::net::{TcpListener, TcpStream};
+use tokio::net::TcpListener;
 use tower_lsp::jsonrpc::Result;
 use tower_lsp::lsp_types::request::Request;
 use tower_lsp::{lsp_types::*, LanguageServer};
@@ -98,6 +99,7 @@ const PROPERTY_COMPLETES: &[&str] = &["class"];
 struct Backend {
     // semantic_types: HashSet<&'static SemanticTokenType>,
     element_names: HashSet<String>,
+    style_enum: HashMap<String, CompletionType>,
 
     documents: RwLock<HashMap<Url, Module>>,
     client: Arc<Client>,
@@ -123,6 +125,78 @@ impl Backend {
         }
     }
 
+    fn recurse_value(
+        &self,
+        value: &Value,
+        ctx: &Option<SpannedToken>,
+        builder: &mut SemanticTokenBuilder,
+    ) {
+        match value {
+            Value::Ident(tok @ SpannedToken(_, Token::Ident(value_str))) => {
+                if let Some(SpannedToken(_, Token::Ident(key_str))) = ctx {
+                    let member = self.style_enum.get(key_str);
+                    if let Some(member) = member {
+                        match member {
+                            CompletionType::Enum(members) => {
+                                for mem in members {
+                                    if mem == value_str {
+                                        builder.push(
+                                            tok.span().line_num,
+                                            tok.span().position,
+                                            tok.span().length,
+                                            get_stype_index(SemanticTokenType::ENUM_MEMBER),
+                                            0,
+                                        );
+                                        return;
+                                    }
+                                }
+                            }
+                            CompletionType::Boolean => {
+                                builder.push(
+                                    tok.span().line_num,
+                                    tok.span().position,
+                                    tok.span().length,
+                                    get_stype_index(SemanticTokenType::KEYWORD),
+                                    0,
+                                );
+                            }
+                            CompletionType::Symbol(box CompletionType::Style) => {
+
+                            }
+                            _ => ()
+                        }
+                    }
+                }
+                builder.push(
+                    tok.span().line_num,
+                    tok.span().position,
+                    tok.span().length,
+                    get_stype_index(SemanticTokenType::VARIABLE),
+                    0,
+                );
+            }
+            Value::Float(_, tok) => {
+                builder.push(
+                    tok.span().line_num,
+                    tok.span().position,
+                    tok.span().length,
+                    get_stype_index(SemanticTokenType::NUMBER),
+                    0,
+                );
+            }
+            Value::Integer(_, tok) => {
+                builder.push(
+                    tok.span().line_num,
+                    tok.span().position,
+                    tok.span().length,
+                    get_stype_index(SemanticTokenType::NUMBER),
+                    0,
+                );
+            }
+            _ => (),
+        }
+    }
+
     fn recurse_style(&self, stmt: &StyleStatement, builder: &mut SemanticTokenBuilder) {
         match stmt {
             StyleStatement::Style { body, token, .. } => {
@@ -131,7 +205,7 @@ impl Backend {
                         token.span().line_num,
                         token.span().position,
                         token.span().length,
-                        get_stype_index(i.clone().into()),
+                        get_stype_index(SemanticTokenType::TYPE),
                         0,
                     );
                 }
@@ -140,47 +214,19 @@ impl Backend {
                     self.recurse_style(&st, builder);
                 }
             }
-            StyleStatement::StyleElement {
-                key: Some(key),
-                colon,
-                value: Some(value),
-            } => {
-                builder.push(
-                    key.span().line_num,
-                    key.span().position,
-                    key.span().length,
-                    get_stype_index(SemanticTokenType::PARAMETER),
-                    0,
-                );
+            StyleStatement::StyleElement { key, colon, value } => {
+                if let Some(key @ SpannedToken(_, Token::Ident(key_str))) = key {
+                    builder.push(
+                        key.span().line_num,
+                        key.span().position,
+                        key.span().length,
+                        get_stype_index(SemanticTokenType::PARAMETER),
+                        0,
+                    );
+                }
 
-                match value {
-                    StyleValue::Ident(tok) => {
-                        builder.push(
-                            tok.span().line_num,
-                            tok.span().position,
-                            tok.span().length,
-                            get_stype_index(SemanticTokenType::VARIABLE),
-                            0,
-                        );
-                    }
-                    StyleValue::Float(_, tok) => {
-                        builder.push(
-                            tok.span().line_num,
-                            tok.span().position,
-                            tok.span().length,
-                            get_stype_index(SemanticTokenType::NUMBER),
-                            0,
-                        );
-                    }
-                    StyleValue::Integer(_, tok) => {
-                        builder.push(
-                            tok.span().line_num,
-                            tok.span().position,
-                            tok.span().length,
-                            get_stype_index(SemanticTokenType::NUMBER),
-                            0,
-                        );
-                    }
+                if let Some(value) = value {
+                    self.recurse_value(value, key, builder)
                 }
             }
             _ => (),
@@ -218,7 +264,7 @@ impl Backend {
                         }
 
                         if let Some(value) = &item.value {
-                            self.recurse_expression(&value, builder);
+                            self.recurse_value(&value, &item.name, builder);
                         }
                     }
                 }
@@ -260,6 +306,84 @@ impl Backend {
         None
     }
 
+    fn bsearch_value_with_key(
+        &self,
+        key: &SpannedToken,
+        span: &Span,
+    ) -> Option<Vec<CompletionItem>> {
+        if let SpannedToken(_, Token::Ident(key_str)) = key {
+            let member = self.style_enum.get(key_str);
+            match member {
+                Some(CompletionType::Enum(members)) => {
+                    let res = members
+                        .iter()
+                        .map(|v| CompletionItem {
+                            label: v.clone(),
+                            kind: Some(CompletionItemKind::ENUM_MEMBER),
+                            ..Default::default()
+                        })
+                        .collect();
+                    return Some(res);
+                }
+                Some(CompletionType::Boolean) => {
+                    return Some(
+                        ["true", "false"]
+                            .into_iter()
+                            .map(|v| CompletionItem {
+                                label: v.to_string(),
+                                kind: Some(CompletionItemKind::KEYWORD),
+                                ..Default::default()
+                            })
+                            .collect(),
+                    );
+                }
+                _ => (),
+            }
+        } else {
+        }
+        None
+    }
+
+    fn bsearch_style(&self, item: &StyleStatement, span: &Span) -> Option<Vec<CompletionItem>> {
+        match item {
+            StyleStatement::Style {
+                body, body_range, ..
+            } => {
+                if let Some(body_range) = body_range {
+                    if body_range.contains(span) {
+                        for stmt in body {
+                            if let Some(v) = self.bsearch_style(stmt, span) {
+                                return Some(v);
+                            }
+                        }
+
+                        return Some(
+                            self.style_enum
+                                .keys()
+                                .map(|k| CompletionItem {
+                                    label: k.clone(),
+                                    kind: Some(CompletionItemKind::PROPERTY),
+                                    insert_text: Some(format!("{}: ", k)),
+                                    ..Default::default()
+                                })
+                                .collect(),
+                        );
+                    }
+                }
+            }
+            StyleStatement::StyleElement { key, colon, value } => {
+                if let Some(colon) = colon {
+                    if colon.0.before(span) {
+                        if let Some(key) = key {
+                            return self.bsearch_value_with_key(key, span);
+                        }
+                    }
+                }
+            }
+        }
+        None
+    }
+
     fn bsearch_statement(&self, item: &Statement, span: &Span) -> Option<Vec<CompletionItem>> {
         match item {
             Statement::Expression(e) => {
@@ -280,39 +404,21 @@ impl Backend {
                             match (&item.colon, cm) {
                                 (Some(colon), Some(cm)) => {
                                     if colon.0.before(span) && cm.0.after(span) {
-                                        // return Some(
-                                        //     PROPERTY_COMPLETES
-                                        //         .iter()
-                                        //         .map(|f| CompletionItem {
-                                        //             label: f.to_string(),
-                                        //             ..Default::default()
-                                        //         })
-                                        //         .collect(),
-                                        // );
+                                        println!("Betwween");
+                                        return None;
                                     }
                                 }
                                 (Some(colon), None) => {
                                     if colon.0.before(span) {
-                                        // return Some(
-                                        //     PROPERTY_COMPLETES
-                                        //         .iter()
-                                        //         .map(|f| CompletionItem {
-                                        //             label: f.to_string(),
-                                        //             ..Default::default()
-                                        //         })
-                                        //         .collect(),
-                                        // );
+                                        if let Some(key) = &item.name {
+                                            return self.bsearch_value_with_key(key, span);
+                                        } else {
+                                            return None;
+                                        }
                                     }
                                 }
                                 _ => (),
                             }
-                            // if item.get_range().contains(span) {
-                            //     println!("contains");
-                            //     return Some(vec![CompletionItem::new_simple(
-                            //         "Arg".into(),
-                            //         "JFlkdsjfoi".into(),
-                            //     )]);
-                            // }
                         }
                         return Some(
                             PROPERTY_COMPLETES
@@ -339,7 +445,8 @@ impl Backend {
                                 .collect(),
                         );
                     }
-                } else if let Some(body_range) = body_range {
+                }
+                if let Some(body_range) = body_range {
                     if body_range.contains(span) {
                         for stmt in body {
                             if let Some(s) = self.bsearch_statement(stmt, span) {
@@ -364,7 +471,18 @@ impl Backend {
                 body,
                 body_range,
                 token,
-            } => return Some(vec![]),
+            } => {
+                if let Some(token) = token {}
+                if let Some(body_range) = body_range {
+                    if body_range.contains(span) {
+                        for stmt in body {
+                            if let Some(v) = self.bsearch_style(stmt, span) {
+                                return Some(v);
+                            }
+                        }
+                    }
+                }
+            }
         }
         None
     }
@@ -396,7 +514,7 @@ impl LanguageServer for Backend {
                 ),
                 completion_provider: Some(CompletionOptions {
                     resolve_provider: Some(true),
-                    // trigger_characters: Some(vec![".".to_string()]),
+                    trigger_characters: Some(vec![":".to_string()]),
                     ..Default::default()
                 }),
                 workspace: Some(WorkspaceServerCapabilities {
@@ -418,7 +536,7 @@ impl LanguageServer for Backend {
     ) -> Result<Option<SemanticTokensResult>> {
         // .await;
 
-        let (toks, _s) = {
+        let toks = {
             let map = &*self.documents.read().unwrap();
 
             let Some(mods) = map.get(&params.text_document.uri) else {
@@ -430,8 +548,7 @@ impl LanguageServer for Backend {
             for tok in &mods.stmts {
                 self.recurse(tok, &mut builder);
             }
-            use neb_smf::format::TreeDisplay;
-            (builder.build(), mods.stmts.format())
+            builder.build()
         };
 
         Ok(Some(SemanticTokensResult::Tokens(SemanticTokens {
@@ -547,6 +664,13 @@ impl LanguageServer for Backend {
     }
 }
 
+pub enum CompletionType {
+    Enum(Vec<String>),
+    Boolean,
+    Symbol(Box<CompletionType>),
+    Style,
+}
+
 #[tokio::main]
 async fn main() {
     let read = tokio::io::stdin();
@@ -590,13 +714,22 @@ async fn main() {
         let client = Arc::new(client);
         let res = Backend {
             element_names: HashSet::from_iter(["style".into(), "view".into(), "setup".into()]),
+            style_enum: HashMap::from([
+                (
+                    "direction".to_string(),
+                    CompletionType::Enum(vec!["Vertical".to_string(), "Horizontal".to_string()]),
+                ),
+                ("visible".to_string(), CompletionType::Boolean),
+                (
+                    "class".to_string(),
+                    CompletionType::Symbol(Box::new(CompletionType::Style)),
+                ),
+            ]),
             documents: RwLock::new(HashMap::new()),
             client: client.clone(),
             logger: ClientLogger(client.clone()),
         };
-        // let logger = Box::new()
-        // neb_smf::set_logger(logger).map(|()| log::set_max_level(LevelFilter::Info)).unwrap();
-        // log::info!("Test");
+
         res
     });
     Server::new(read, write, socket).serve(service).await;

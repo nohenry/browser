@@ -15,6 +15,7 @@ cssparser = "0.29.6"
 neb_errors = { path = "../neb_errors" }
 neb_graphics = { path = "../neb_graphics" }
 neb_macros = { path = "../neb_macros" }
+neb_util = { path = "../neb_util" }
 
 roxmltree = "*"
 nom = "7.1.1"

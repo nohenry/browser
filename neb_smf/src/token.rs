@@ -1,6 +1,7 @@
 use std::sync::RwLock;
 
-use crate::format::{NodeDisplay, TreeDisplay};
+use neb_util::format::{NodeDisplay, TreeDisplay};
+
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum Operator {

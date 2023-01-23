@@ -1,5 +1,5 @@
 [workspace]
-members = ["browser", "neb_core", "neb_errors", "neb_graphics", "neb_macros", "neb_smf", "smf/rserver"]
+members = ["browser", "neb_util", "neb_core", "neb_errors", "neb_graphics", "neb_macros", "neb_smf", "smf/rserver"]
 resolver = "2"
 
 [patch.crates-io]

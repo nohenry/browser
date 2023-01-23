@@ -134,7 +134,7 @@ impl Parser {
         // }
     }
 
-    fn parse_args(&self) -> Option<ElementArgs> {
+    pub fn parse_args(&self) -> Option<ElementArgs> {
         let open = self.expect_operator(Operator::OpenParen);
 
         let args = match self.tokens.peek() {
@@ -191,7 +191,7 @@ impl Parser {
     fn parse_arg(&self) -> Option<Arg> {
         let ident = self.expect(Token::Ident("".into()));
         let colon = self.expect_operator(Operator::Colon);
-        let expression = self.parse_expression();
+        let expression = self.parse_value();
 
         match (ident, colon, expression) {
             (Some(ident), Some(colon), Some(expr)) => Some(Arg {
@@ -213,16 +213,16 @@ impl Parser {
         }
     }
 
-    fn parse_expression(&self) -> Option<Expression> {
-        self.parse_literal()
-    }
+    // fn parse_expression(&self) -> Option<Expression> {
+    //     self.parse_literal()
+    // }
 
-    fn parse_literal(&self) -> Option<Expression> {
-        match self.tokens.peek() {
-            Some(Token::Ident(_)) => Some(Expression::Ident(self.tokens.next().cloned().unwrap())),
-            _ => None,
-        }
-    }
+    // fn parse_literal(&self) -> Option<Expression> {
+    //     match self.tokens.peek() {
+    //         Some(Token::Ident(_)) => Some(Expression::Ident(self.tokens.next().cloned().unwrap())),
+    //         _ => None,
+    //     }
+    // }
 
     pub(crate) fn expect_operator(&self, operator: Operator) -> Option<&SpannedToken> {
         self.ignore_ws();
