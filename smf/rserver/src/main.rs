@@ -200,7 +200,7 @@ impl Backend {
     fn recurse_style(&self, stmt: &StyleStatement, builder: &mut SemanticTokenBuilder) {
         match stmt {
             StyleStatement::Style { body, token, .. } => {
-                if let Some(token @ SpannedToken(_, Token::Ident(i))) = token {
+                if let Some(token @ SpannedToken(_, Token::Ident(_i))) = token {
                     builder.push(
                         token.span().line_num,
                         token.span().position,
@@ -214,8 +214,8 @@ impl Backend {
                     self.recurse_style(&st, builder);
                 }
             }
-            StyleStatement::StyleElement { key, colon, value } => {
-                if let Some(key @ SpannedToken(_, Token::Ident(key_str))) = key {
+            StyleStatement::StyleElement { key, colon: _, value } => {
+                if let Some(key @ SpannedToken(_, Token::Ident(_key_str))) = key {
                     builder.push(
                         key.span().line_num,
                         key.span().position,
@@ -288,7 +288,7 @@ impl Backend {
                     self.recurse_style(&st, builder);
                 }
             }
-            Statement::Expression(e) => self.recurse_expression(e, builder),
+            // Statement::Expression(e) => self.recurse_expression(e, builder),
         }
     }
 
@@ -309,7 +309,7 @@ impl Backend {
     fn bsearch_value_with_key(
         &self,
         key: &SpannedToken,
-        span: &Span,
+        _span: &Span,
     ) -> Option<Vec<CompletionItem>> {
         if let SpannedToken(_, Token::Ident(key_str)) = key {
             let member = self.style_enum.get(key_str);
@@ -371,7 +371,7 @@ impl Backend {
                     }
                 }
             }
-            StyleStatement::StyleElement { key, colon, value } => {
+            StyleStatement::StyleElement { key, colon, value: _ } => {
                 if let Some(colon) = colon {
                     if colon.0.before(span) {
                         if let Some(key) = key {
@@ -386,11 +386,11 @@ impl Backend {
 
     fn bsearch_statement(&self, item: &Statement, span: &Span) -> Option<Vec<CompletionItem>> {
         match item {
-            Statement::Expression(e) => {
-                if e.get_range().contains(span) {
-                    return self.bsearch_expression(e, span);
-                }
-            }
+            // Statement::Expression(e) => {
+            //     if e.get_range().contains(span) {
+            //         return self.bsearch_expression(e, span);
+            //     }
+            // }
             Statement::Element {
                 arguments,
                 body,
@@ -472,7 +472,7 @@ impl Backend {
                 body_range,
                 token,
             } => {
-                if let Some(token) = token {}
+                if let Some(_token) = token {}
                 if let Some(body_range) = body_range {
                     if body_range.contains(span) {
                         for stmt in body {
@@ -673,15 +673,15 @@ pub enum CompletionType {
 
 #[tokio::main]
 async fn main() {
-    let read = tokio::io::stdin();
-    let write = tokio::io::stdout();
+    let _read = tokio::io::stdin();
+    let _write = tokio::io::stdout();
 
     #[cfg(feature = "runtime-agnostic")]
     use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
 
     // tracing_subscriber::fmt().init();
 
-    let mut args = std::env::args();
+    let _args = std::env::args();
     // let stream = match args.nth(1).as_deref() {
     //     None => {
     //         // If no argument is supplied (args is just the program name), then

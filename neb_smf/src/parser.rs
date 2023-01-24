@@ -1,7 +1,7 @@
 use std::sync::{RwLock, RwLockReadGuard};
 
 use crate::{
-    ast::{Arg, ElementArgs, Expression, PunctuationList, Statement},
+    ast::{Arg, ElementArgs, PunctuationList, Statement},
     error::{ParseError, ParseErrorKind},
     token::{Operator, Range, SpannedToken, Token, TokenStream},
 };

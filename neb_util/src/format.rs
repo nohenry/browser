@@ -1,4 +1,4 @@
-use std::{borrow::Borrow, cell::{Ref, RefCell}, fmt};
+use std::{cell::{Ref, RefCell}, fmt};
 
 use crate::Rf;
 
@@ -162,11 +162,11 @@ where
         1
     }
 
-    fn child_at(&self, index: usize) -> Option<&dyn TreeDisplay> {
+    fn child_at(&self, _index: usize) -> Option<&dyn TreeDisplay> {
         None
     }
 
-    fn child_at_bx<'a>(&'a self, index: usize) -> Box<dyn TreeDisplay + 'a> {
+    fn child_at_bx<'a>(&'a self, _index: usize) -> Box<dyn TreeDisplay + 'a> {
         Box::new(self.0.as_ref().borrow())
     }
 }

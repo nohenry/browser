@@ -302,7 +302,7 @@ impl NodeDisplay for Value {
 impl TreeDisplay for Value {
     fn num_children(&self) -> usize {
         match self {
-            Self::Function { args, .. } => 1,
+            Self::Function {  .. } => 1,
             _ => 0,
         }
     }
@@ -360,7 +360,7 @@ impl NodeDisplay for StyleStatement {
 impl TreeDisplay for StyleStatement {
     fn num_children(&self) -> usize {
         match self {
-            Self::StyleElement { key, colon, value } => addup!(key, value),
+            Self::StyleElement { key, colon: _, value } => addup!(key, value),
             Self::Style {
                 body_range,
                 token,
@@ -371,7 +371,7 @@ impl TreeDisplay for StyleStatement {
 
     fn child_at(&self, index: usize) -> Option<&dyn TreeDisplay> {
         match self {
-            Self::StyleElement { key, colon, value } => {
+            Self::StyleElement { key, colon: _, value } => {
                 switchon!(index, key, value);
                 None
             }
@@ -389,7 +389,7 @@ impl TreeDisplay for StyleStatement {
 }
 
 pub enum Statement {
-    Expression(Expression),
+    // Expression(Expression),
     Element {
         arguments: Option<ElementArgs>,
         body: Vec<Statement>,
@@ -406,7 +406,7 @@ pub enum Statement {
 impl AstNode for Statement {
     fn get_range(&self) -> Range {
         match self {
-            Self::Expression(e) => e.get_range(),
+            // Self::Expression(e) => e.get_range(),
             Self::Element {
                 body_range: Some(body_range),
                 token: Some(token),
@@ -468,7 +468,7 @@ impl TreeDisplay for Statement {
                 token,
                 body,
             } => addup!(body_range, token) + body.len(),
-            Self::Expression(_) => 1,
+            // Self::Expression(_) => 1,
         }
     }
 
@@ -493,7 +493,7 @@ impl TreeDisplay for Statement {
                 let ind = switchon!(index, token, body_range);
                 Some(&body[index - ind])
             }
-            Self::Expression(e) => Some(e),
+            // Self::Expression(e) => Some(e),
         }
     }
 
