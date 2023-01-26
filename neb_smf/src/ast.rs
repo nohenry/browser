@@ -73,6 +73,7 @@ impl AstNode for SpannedToken {
     }
 }
 
+#[derive(Clone)]
 pub struct PunctuationList<T: AstNode> {
     tokens: Vec<(T, Option<SpannedToken>)>,
 }
@@ -137,6 +138,7 @@ where
     }
 }
 
+#[derive(Clone)]
 pub struct ElementArgs {
     pub range: Range,
     pub items: PunctuationList<Arg>,
@@ -174,6 +176,7 @@ impl TreeDisplay for ElementArgs {
     }
 }
 
+#[derive(Clone)]
 pub struct Arg {
     pub name: Option<SpannedToken>,
     pub colon: Option<SpannedToken>,
@@ -258,6 +261,7 @@ impl TreeDisplay for Expression {
     }
 }
 
+#[derive(Clone)]
 pub enum Value {
     Integer(u64, SpannedToken),
     Float(f64, SpannedToken),
@@ -315,6 +319,7 @@ impl TreeDisplay for Value {
     }
 }
 
+#[derive(Clone)]
 pub enum StyleStatement {
     StyleElement {
         key: Option<SpannedToken>,

@@ -159,7 +159,7 @@ where
                 if let Some((node, sdepth)) = svg.clone() {
                     if sdepth == depth {
                         {
-                            let mut node = node.borrow_mut();
+                            let mut node = node.borrow();
                             let view = match &mut node.ty {
                                 NodeType::Svg(s) => s.view,
                                 _ => panic!(),
@@ -168,7 +168,7 @@ where
                             node.ty = NodeType::Svg(svg);
                         }
                         {
-                            let mut node = node.borrow_mut();
+                            let mut node = node.borrow();
                             node.remove_children();
                         }
                         svg = None
@@ -181,7 +181,7 @@ where
                 };
 
                 if let Some(node) = nodes.get_mut(&(depth - 1)) {
-                    node.borrow_mut().add_child(to_add);
+                    node.borrow().add_child(to_add);
                 }
             }
             Ok(XmlEvent::Characters(text)) => {
@@ -200,7 +200,7 @@ where
                         _ => {
                             let nd =
                                 Rf::new(Node::new(NodeType::Text(text.trim().to_string()), parent));
-                            node.borrow_mut().add_child_rf(nd);
+                            node.borrow().add_child_rf(nd);
                         }
                     }
                 }

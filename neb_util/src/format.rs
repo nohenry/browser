@@ -1,4 +1,4 @@
-use std::{cell::{Ref, RefCell}, fmt};
+use std::{cell::{Ref, RefCell}, fmt, sync::{Mutex, MutexGuard}};
 
 use crate::Rf;
 
@@ -150,7 +150,7 @@ where
     T: NodeDisplay,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        self.borrow_mut().fmt(f)
+        self.lock().unwrap().fmt(f)
     }
 }
 
@@ -167,7 +167,7 @@ where
     }
 
     fn child_at_bx<'a>(&'a self, _index: usize) -> Box<dyn TreeDisplay + 'a> {
-        Box::new(self.0.as_ref().borrow())
+        Box::new(self.0.lock().unwrap())
     }
 }
 
@@ -193,6 +193,28 @@ where
     }
 }
 
+impl<T> NodeDisplay for MutexGuard<'_, T>
+where
+    T: NodeDisplay,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        <T as NodeDisplay>::fmt(&self, f)
+    }
+}
+
+impl<T> TreeDisplay for MutexGuard<'_, T>
+where
+    T: NodeDisplay + TreeDisplay,
+{
+    fn num_children(&self) -> usize {
+        <T as TreeDisplay>::num_children(&self)
+    }
+
+    fn child_at(&self, index: usize) -> Option<&dyn TreeDisplay> {
+        <T as TreeDisplay>::child_at(&self, index)
+    }
+}
+
 impl<T> NodeDisplay for RefCell<T>
 where
     T: NodeDisplay,
@@ -201,3 +223,14 @@ where
         <T as NodeDisplay>::fmt(&self.borrow(), f)
     }
 }
+
+impl<T> NodeDisplay for Mutex<T>
+where
+    T: NodeDisplay,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        <T as NodeDisplay>::fmt(&self.lock().unwrap(), f)
+    }
+}
+
+

@@ -1,4 +1,4 @@
-use std::{cell::Ref, collections::HashMap, fmt::Display, slice::Iter};
+use std::{cell::Ref, collections::HashMap, fmt::Display, slice::Iter, sync::MutexGuard};
 
 use neb_graphics::{
     drawing_context::DrawingContext,
@@ -241,7 +241,7 @@ impl Node {
         }
     }
 
-    pub fn bparent(&self) -> Ref<Node> {
+    pub fn bparent(&self) -> MutexGuard<'_, Node> {
         self.parent
             .as_ref()
             .expect("Expected parent node!")

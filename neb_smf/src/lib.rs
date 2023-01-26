@@ -1,8 +1,8 @@
 #![feature(trait_upcasting)]
 
-use std::{collections::HashMap, sync::Arc};
+use std::collections::HashMap;
 
-use ast::{Statement, StyleStatement, Value};
+use ast::{Statement, StyleStatement};
 use lexer::Lexer;
 use log::{Log, SetLoggerError};
 use neb_util::{
@@ -43,7 +43,7 @@ pub async fn parse_str(input: String) -> (Module, Vec<ParseError>) {
                 body_range,
                 token: Some(SpannedToken(_, Token::Ident(i))),
             } => {
-                Symbol::insert(&dmods, &i, SymbolKind::Style);
+                Symbol::insert(&dmods, &i, SymbolKind::Style(st.clone()));
             }
             _ => (),
         }
@@ -57,6 +57,7 @@ pub async fn parse_str(input: String) -> (Module, Vec<ParseError>) {
         Module {
             content: input.to_string(),
             stmts: parsed,
+            symbol_tree: mods,
         },
         er,
     )
@@ -69,6 +70,7 @@ pub fn set_logger(logger: Box<dyn Log>) -> Result<(), SetLoggerError> {
 pub struct Module {
     pub content: String,
     pub stmts: Vec<Statement>,
+    pub symbol_tree: Rf<Symbol>,
 }
 
 impl Module {
@@ -82,7 +84,7 @@ impl Module {
 
 pub enum SymbolKind {
     StyleNode,
-    Style,
+    Style(StyleStatement),
     Root,
 }
 
@@ -98,7 +100,7 @@ impl NodeDisplay for Symbol {
         match &self.kind {
             SymbolKind::Root => f.write_str("Root"),
             SymbolKind::StyleNode => f.write_str("Style Node"),
-            SymbolKind::Style => write!(f, "Style `{}`", self.name),
+            SymbolKind::Style(_) => write!(f, "Style `{}`", self.name),
         }
     }
 }
@@ -133,7 +135,7 @@ impl Symbol {
             children: HashMap::new(),
         });
 
-        symb.borrow_mut()
+        symb.borrow()
             .children
             .insert(name.to_string(), new.clone());
 
