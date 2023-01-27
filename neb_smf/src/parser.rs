@@ -45,6 +45,13 @@ impl Parser {
 
     pub fn parse_statement(&self) -> Option<Statement> {
         let tok = match self.tokens.peek() {
+            Some(Token::Ident(s)) if s == "use" => {
+                if let Some(us) = self.parse_use() {
+                    return Some(us);
+                } else {
+                    None
+                }
+            }
             Some(Token::Ident(_)) => self.tokens.next(),
             _ => None,
         };
@@ -53,6 +60,38 @@ impl Parser {
             Some(_) => return self.parse_element(tok),
             _ => return None,
         }
+    }
+
+    pub fn parse_use(&self) -> Option<Statement> {
+        let token = self.tokens.next();
+        println!("USEEEEEE");
+        let mut args = PunctuationList::new();
+        let mut last_line = token.map(|l| l.span().line_num);
+        while let Some(Token::Ident(_)) = self.tokens.peek() {
+            println!("Ident use");
+            let tok = self.tokens.next();
+
+            match (self.tokens.peek(), tok) {
+                (Some(Token::Operator(Operator::Dot)), Some(id)) => {
+                    let dot = self.tokens.next();
+                    args.push(id.clone(), dot.cloned());
+                }
+                (_, Some(id)) => {
+                    let lline = *last_line.get_or_insert(id.span().line_num);
+                    if lline == id.span().line_num {
+                        args.push(id.clone(), None);
+                    } else {
+                        self.tokens.back();
+                    }
+                    break;
+                }
+                _ => break
+            }
+        }
+        Some(Statement::UseStatement {
+            token: token.cloned(),
+            args,
+        })
     }
 
     pub fn parse_element(&self, ident: Option<&SpannedToken>) -> Option<Statement> {

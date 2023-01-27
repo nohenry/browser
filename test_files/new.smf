@@ -5,8 +5,14 @@ setup {
             gap: 50
             visible: false
         }
+
+        box {
+
+        }
     }
 }
+
+use setup.style
 
 view (class: centered) {
 

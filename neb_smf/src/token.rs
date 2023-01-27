@@ -9,6 +9,7 @@ pub enum Operator {
     CloseParen,
     OpenBrace,
     CloseBrace,
+    Dot,
     Colon,
     Comma,
 }
@@ -20,6 +21,7 @@ impl Operator {
             Self::CloseParen => "`)`",
             Self::OpenBrace => "`{`",
             Self::CloseBrace => "`}`",
+            Self::Dot => "`.`",
             Self::Colon => "`:`",
             Self::Comma => "`,`",
         }
@@ -80,6 +82,11 @@ impl<'a> TokenStream {
             return None;
         }
         Some(&self.tokens[next_index].tok())
+    }
+
+    pub fn back(&'a self) {
+        let mut s = self.next_index.write().unwrap();
+        *s -= 1;
     }
 }
 

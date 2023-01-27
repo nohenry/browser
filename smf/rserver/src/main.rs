@@ -5,8 +5,8 @@ use std::sync::{Arc, RwLock};
 
 use neb_smf::ast::{AstNode, Expression, Statement, StyleStatement, Value};
 use neb_smf::logger::ClientLogger;
-use neb_smf::token::{Span, SpannedToken, Token};
-use neb_smf::Module;
+use neb_smf::token::{Operator, Span, SpannedToken, Token};
+use neb_smf::{Module, SymbolKind};
 use tokio::net::TcpListener;
 use tower_lsp::jsonrpc::Result;
 use tower_lsp::lsp_types::request::Request;
@@ -110,6 +110,13 @@ fn get_stype_index(ty: SemanticTokenType) -> u32 {
     STOKEN_TYPES.iter().position(|f| *f == ty).unwrap_or(0) as u32
 }
 
+fn get_stype_index_from_str(ty: &str) -> u32 {
+    STOKEN_TYPES
+        .iter()
+        .position(|f| f.as_str() == ty)
+        .unwrap_or(0) as u32
+}
+
 impl Backend {
     fn recurse_expression(&self, ele: &Expression, builder: &mut SemanticTokenBuilder) {
         match ele {
@@ -160,10 +167,8 @@ impl Backend {
                                     0,
                                 );
                             }
-                            CompletionType::Symbol(box CompletionType::Style) => {
-
-                            }
-                            _ => ()
+                            CompletionType::Symbol(box CompletionType::Style) => {}
+                            _ => (),
                         }
                     }
                 }
@@ -214,7 +219,11 @@ impl Backend {
                     self.recurse_style(&st, builder);
                 }
             }
-            StyleStatement::StyleElement { key, colon: _, value } => {
+            StyleStatement::StyleElement {
+                key,
+                colon: _,
+                value,
+            } => {
                 if let Some(key @ SpannedToken(_, Token::Ident(_key_str))) = key {
                     builder.push(
                         key.span().line_num,
@@ -233,7 +242,7 @@ impl Backend {
         }
     }
 
-    fn recurse(&self, stmt: &Statement, builder: &mut SemanticTokenBuilder) {
+    fn recurse(&self, module: &Module, stmt: &Statement, builder: &mut SemanticTokenBuilder) {
         match stmt {
             Statement::Element {
                 arguments,
@@ -270,7 +279,7 @@ impl Backend {
                 }
 
                 for st in body {
-                    self.recurse(&st, builder);
+                    self.recurse(module, &st, builder);
                 }
             }
             Statement::Style { body, token, .. } => {
@@ -279,7 +288,7 @@ impl Backend {
                         token.span().line_num,
                         token.span().position,
                         token.span().length,
-                        get_stype_index(i.clone().into()),
+                        get_stype_index_from_str(&i),
                         0,
                     );
                 }
@@ -288,7 +297,46 @@ impl Backend {
                     self.recurse_style(&st, builder);
                 }
             }
-            // Statement::Expression(e) => self.recurse_expression(e, builder),
+            Statement::UseStatement { token, args } => {
+                if let Some(token) = token {
+                    builder.push(
+                        token.span().line_num,
+                        token.span().position,
+                        token.span().length,
+                        get_stype_index_from_str("keyword"),
+                        0,
+                    )
+                }
+
+                module.iter_symbol(args.iter_items(), |name, val| match val.borrow().kind {
+                    SymbolKind::Style(_) => builder.push(
+                        name.span().line_num,
+                        name.span().position,
+                        name.span().length,
+                        get_stype_index_from_str("type"),
+                        0,
+                    ),
+                    _ => {
+                        builder.push(
+                            name.span().line_num,
+                            name.span().position,
+                            name.span().length,
+                            get_stype_index_from_str("namespace"),
+                            0,
+                        );
+                    }
+                });
+
+                // for (arg, _) in args.iter() {
+                //     builder.push(
+                //         arg.span().line_num,
+                //         arg.span().position,
+                //         arg.span().length,
+                //         get_stype_index_from_str("namespace"),
+                //         0,
+                //     )
+                // }
+            }
         }
     }
 
@@ -371,7 +419,11 @@ impl Backend {
                     }
                 }
             }
-            StyleStatement::StyleElement { key, colon, value: _ } => {
+            StyleStatement::StyleElement {
+                key,
+                colon,
+                value: _,
+            } => {
                 if let Some(colon) = colon {
                     if colon.0.before(span) {
                         if let Some(key) = key {
@@ -384,7 +436,12 @@ impl Backend {
         None
     }
 
-    fn bsearch_statement(&self, item: &Statement, span: &Span) -> Option<Vec<CompletionItem>> {
+    fn bsearch_statement(
+        &self,
+        module: &Module,
+        item: &Statement,
+        span: &Span,
+    ) -> Option<Vec<CompletionItem>> {
         match item {
             // Statement::Expression(e) => {
             //     if e.get_range().contains(span) {
@@ -449,7 +506,7 @@ impl Backend {
                 if let Some(body_range) = body_range {
                     if body_range.contains(span) {
                         for stmt in body {
-                            if let Some(s) = self.bsearch_statement(stmt, span) {
+                            if let Some(s) = self.bsearch_statement(module, stmt, span) {
                                 return Some(s);
                             } else {
                                 return Some(
@@ -480,6 +537,26 @@ impl Backend {
                                 return Some(v);
                             }
                         }
+                    }
+                }
+            }
+            Statement::UseStatement { token, args } => {
+                if let Some((_, Some(SpannedToken(_, Token::Operator(Operator::Dot))))) =
+                    args.iter().last()
+                {
+                    if let Some(sym) = module.resolve_symbol(args.iter_items()) {
+                        let mut comp = Vec::new();
+                        for (name, sym) in &sym.borrow().children {
+                            match &sym.borrow().kind {
+                                SymbolKind::Style(_) => comp.push(CompletionItem {
+                                    label: name.clone(),
+                                    kind: Some(CompletionItemKind::STRUCT),
+                                    ..Default::default()
+                                }),
+                                _ => (),
+                            }
+                        }
+                        return Some(comp);
                     }
                 }
             }
@@ -546,7 +623,7 @@ impl LanguageServer for Backend {
             // let mut toks = Vec::new();
             let mut builder = SemanticTokenBuilder::new();
             for tok in &mods.stmts {
-                self.recurse(tok, &mut builder);
+                self.recurse(mods, tok, &mut builder);
             }
             builder.build()
         };
@@ -578,7 +655,7 @@ impl LanguageServer for Backend {
             let items = mods
                 .stmts
                 .iter()
-                .find_map(|f| self.bsearch_statement(f, &sp));
+                .find_map(|f| self.bsearch_statement(mods, f, &sp));
 
             if let None = items {
                 if mods

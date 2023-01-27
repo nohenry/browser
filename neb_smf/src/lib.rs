@@ -39,8 +39,8 @@ pub async fn parse_str(input: String) -> (Module, Vec<ParseError>) {
         println!("{}", st.format());
         match st {
             StyleStatement::Style {
-                body,
-                body_range,
+                body: _,
+                body_range: _,
                 token: Some(SpannedToken(_, Token::Ident(i))),
             } => {
                 Symbol::insert(&dmods, &i, SymbolKind::Style(st.clone()));
@@ -79,6 +79,54 @@ impl Module {
             .iter()
             .map(|f| format!("{}\n", f.format()))
             .collect()
+    }
+
+    pub fn resolve_symbol<'a>(
+        &self,
+        iter: impl Iterator<Item = &'a SpannedToken>,
+    ) -> Option<Rf<Symbol>> {
+        self.impl_resolve_from_iter(&self.symbol_tree, iter).ok()
+    }
+
+    pub fn iter_symbol<'a, F: FnMut(&SpannedToken, &Rf<Symbol>)>(
+        &self,
+        iter: impl Iterator<Item = &'a SpannedToken>,
+        f: F,
+    ) {
+        self.impl_iter_symbol(&self.symbol_tree, iter, f);
+    }
+
+    fn impl_iter_symbol<'a, F: FnMut(&SpannedToken, &Rf<Symbol>)>(
+        &self,
+        last: &Rf<Symbol>,
+        mut iter: impl Iterator<Item = &'a SpannedToken>,
+        mut f: F,
+    ) {
+        if let Some(tok @ SpannedToken(_, Token::Ident(i))) = iter.next() {
+            if let Some(s) = last.borrow().children.get(i) {
+                f(tok, s);
+                self.impl_iter_symbol(s, iter, f);
+            }
+        }
+    }
+
+    fn impl_resolve_from_iter<'a>(
+        &self,
+        last: &Rf<Symbol>,
+        mut iter: impl Iterator<Item = &'a SpannedToken>,
+    ) -> Result<Rf<Symbol>, bool> {
+        if let Some(SpannedToken(_, Token::Ident(i))) = iter.next() {
+            if let Some(s) = last.borrow().children.get(i) {
+                match self.impl_resolve_from_iter(s, iter) {
+                    Ok(n) => return Ok(n),
+                    Err(true) if &s.borrow().name == i => return Ok(s.clone()),
+                    _ => (),
+                }
+            }
+        } else {
+            return Err(true);
+        }
+        Err(false)
     }
 }
 
@@ -135,9 +183,7 @@ impl Symbol {
             children: HashMap::new(),
         });
 
-        symb.borrow()
-            .children
-            .insert(name.to_string(), new.clone());
+        symb.borrow().children.insert(name.to_string(), new.clone());
 
         new
     }
@@ -200,6 +246,7 @@ impl ModuleDescender {
         match node {
             Statement::Element { body, .. } => self.descend(body),
             Statement::Style { body, .. } => self.descend_style_statements(body),
+            Statement::UseStatement { .. } => (),
         }
     }
 }

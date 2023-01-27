@@ -67,6 +67,7 @@ impl Lexer {
                 Some('{') => return Some(Token::Operator(Operator::OpenBrace)),
                 Some('}') => return Some(Token::Operator(Operator::CloseBrace)),
                 Some(':') => return Some(Token::Operator(Operator::Colon)),
+                Some('.') => return Some(Token::Operator(Operator::Dot)),
                 Some(',') => return Some(Token::Operator(Operator::Comma)),
                 Some('\n') => return Some(Token::Newline),
                 Some(c) if c.is_whitespace() => return Some(Token::Whitespace),

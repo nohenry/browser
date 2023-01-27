@@ -1,14 +1,10 @@
-use neb_util::format::{TreeDisplay, NodeDisplay};
+use neb_util::format::{NodeDisplay, TreeDisplay};
 
-use crate::{
-    token::{Range, SpannedToken, Token},
-};
+use crate::token::{Range, SpannedToken, Token};
 
 pub trait AstNode: TreeDisplay {
     fn get_range(&self) -> Range;
 }
-
-
 
 macro_rules! addup {
     ($($e:expr),*) => {{
@@ -306,7 +302,7 @@ impl NodeDisplay for Value {
 impl TreeDisplay for Value {
     fn num_children(&self) -> usize {
         match self {
-            Self::Function {  .. } => 1,
+            Self::Function { .. } => 1,
             _ => 0,
         }
     }
@@ -365,7 +361,11 @@ impl NodeDisplay for StyleStatement {
 impl TreeDisplay for StyleStatement {
     fn num_children(&self) -> usize {
         match self {
-            Self::StyleElement { key, colon: _, value } => addup!(key, value),
+            Self::StyleElement {
+                key,
+                colon: _,
+                value,
+            } => addup!(key, value),
             Self::Style {
                 body_range,
                 token,
@@ -376,7 +376,11 @@ impl TreeDisplay for StyleStatement {
 
     fn child_at(&self, index: usize) -> Option<&dyn TreeDisplay> {
         match self {
-            Self::StyleElement { key, colon: _, value } => {
+            Self::StyleElement {
+                key,
+                colon: _,
+                value,
+            } => {
                 switchon!(index, key, value);
                 None
             }
@@ -395,6 +399,10 @@ impl TreeDisplay for StyleStatement {
 
 pub enum Statement {
     // Expression(Expression),
+    UseStatement {
+        token: Option<SpannedToken>,
+        args: PunctuationList<SpannedToken>,
+    },
     Element {
         arguments: Option<ElementArgs>,
         body: Vec<Statement>,
@@ -473,7 +481,7 @@ impl TreeDisplay for Statement {
                 token,
                 body,
             } => addup!(body_range, token) + body.len(),
-            // Self::Expression(_) => 1,
+            Self::UseStatement { token, args } => addup!(token) + args.num_children(), // Self::Expression(_) => 1,
         }
     }
 
@@ -498,7 +506,10 @@ impl TreeDisplay for Statement {
                 let ind = switchon!(index, token, body_range);
                 Some(&body[index - ind])
             }
-            // Self::Expression(e) => Some(e),
+            Self::UseStatement { token, args } => {
+                let ind = switchon!(index, token);
+                args.child_at(index - ind)
+            }
         }
     }
 
