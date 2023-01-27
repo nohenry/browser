@@ -544,10 +544,16 @@ impl Backend {
                 if let Some((_, Some(SpannedToken(_, Token::Operator(Operator::Dot))))) =
                     args.iter().last()
                 {
-                    if let Some(sym) = module.resolve_symbol(args.iter_items()) {
+                    if let Some(sym) = module.resolve_symbol_chain(args.iter_items()) {
+                        println!("Use {}", sym.borrow().name);
                         let mut comp = Vec::new();
                         for (name, sym) in &sym.borrow().children {
                             match &sym.borrow().kind {
+                                SymbolKind::Node => comp.push(CompletionItem {
+                                    label: name.clone(),
+                                    kind: Some(CompletionItemKind::MODULE),
+                                    ..Default::default()
+                                }),
                                 SymbolKind::Style(_) => comp.push(CompletionItem {
                                     label: name.clone(),
                                     kind: Some(CompletionItemKind::STRUCT),
@@ -591,7 +597,7 @@ impl LanguageServer for Backend {
                 ),
                 completion_provider: Some(CompletionOptions {
                     resolve_provider: Some(true),
-                    trigger_characters: Some(vec![":".to_string()]),
+                    trigger_characters: Some(vec![":".to_string(), ".".to_string()]),
                     ..Default::default()
                 }),
                 workspace: Some(WorkspaceServerCapabilities {

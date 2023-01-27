@@ -32,22 +32,50 @@ pub async fn parse_str(input: String) -> (Module, Vec<ParseError>) {
 
     let er = parser.get_errors().clone();
 
-    // let mods: Arc<HashMap<String, Rf<Symbol>>> = Arc::new(HashMap::new());
     let mods = Symbol::new_root();
-    let dmods = Symbol::insert(&mods, "style", SymbolKind::StyleNode);
-    let mut md = ModuleDescender::new().with_on_style_statement(move |st| {
-        println!("{}", st.format());
-        match st {
-            StyleStatement::Style {
-                body: _,
-                body_range: _,
-                token: Some(SpannedToken(_, Token::Ident(i))),
-            } => {
-                Symbol::insert(&dmods, &i, SymbolKind::Style(st.clone()));
+    let mut md = ModuleDescender::new(mods.clone())
+        .with_on_statement(|st, ud| {
+            match st {
+                Statement::Element { token, .. } | Statement::Style { token, .. } => {
+                    let cd = if let Some(SpannedToken(_, Token::Ident(i))) = token {
+                        Symbol::insert(&ud, &i, SymbolKind::Node)
+                    } else {
+                        Symbol::insert(&ud, &"view", SymbolKind::Node)
+                    };
+                    return (cd, ud);
+                }
+                Statement::UseStatement { args, .. } => {
+                    let res: Option<Vec<String>> = args
+                        .iter_items()
+                        .map(|a| match a {
+                            SpannedToken(_, Token::Ident(i)) => Some(i.clone()),
+                            _ => None,
+                        })
+                        .collect();
+                    if let Some(res) = res {
+                        let cd = Symbol::insert(&ud, &"use", SymbolKind::Use(res));
+                        return (cd, ud);
+                    }
+                }
+                _ => (),
             }
-            _ => (),
-        }
-    });
+            (ud.clone(), ud)
+        })
+        .with_on_style_statement(move |st, ud| {
+            match st {
+                StyleStatement::Style {
+                    body: _,
+                    body_range: _,
+                    token: Some(SpannedToken(_, Token::Ident(i))),
+                } => {
+                    let cd = Symbol::insert(&ud, &i, SymbolKind::Style(st.clone()));
+                    // let cd = Symbol::insert(&ud, &i, SymbolKind::Style(st.clone()));
+                    return (cd, ud);
+                }
+                _ => (),
+            }
+            (ud.clone(), ud)
+        });
 
     md.descend(&parsed);
 
@@ -81,7 +109,11 @@ impl Module {
             .collect()
     }
 
-    pub fn resolve_symbol<'a>(
+    pub fn resolve_symbol(&self, symbol_name: &str) {
+
+    }
+
+    pub fn resolve_symbol_chain<'a>(
         &self,
         iter: impl Iterator<Item = &'a SpannedToken>,
     ) -> Option<Rf<Symbol>> {
@@ -131,8 +163,10 @@ impl Module {
 }
 
 pub enum SymbolKind {
-    StyleNode,
+    Node,
+    // StyleNode,
     Style(StyleStatement),
+    Use(Vec<String>),
     Root,
 }
 
@@ -147,8 +181,9 @@ impl NodeDisplay for Symbol {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match &self.kind {
             SymbolKind::Root => f.write_str("Root"),
-            SymbolKind::StyleNode => f.write_str("Style Node"),
+            SymbolKind::Node => write!(f, "Node `{}`", self.name),
             SymbolKind::Style(_) => write!(f, "Style `{}`", self.name),
+            SymbolKind::Use(_) => write!(f, "Use"),
         }
     }
 }
@@ -190,29 +225,34 @@ impl Symbol {
 }
 
 #[derive(Default)]
-pub struct ModuleDescender {
-    on_statement: Option<Box<dyn FnMut(&Statement)>>,
-    on_style_statement: Option<Box<dyn FnMut(&StyleStatement)>>,
+pub struct ModuleDescender<U: Clone> {
+    user_data: U,
+    on_statement: Option<Box<dyn FnMut(&Statement, U) -> (U, U)>>,
+    on_style_statement: Option<Box<dyn FnMut(&StyleStatement, U) -> (U, U)>>,
     // on_value: Option<Box<fn(statement: &Value)>>,
 }
 
-impl ModuleDescender {
-    pub fn new() -> ModuleDescender {
-        Default::default()
+impl<U: Clone> ModuleDescender<U> {
+    pub fn new(user_data: U) -> ModuleDescender<U> {
+        ModuleDescender {
+            user_data,
+            on_statement: None,
+            on_style_statement: None,
+        }
     }
 
     pub fn with_on_statement(
         mut self,
-        on_statement: impl FnMut(&Statement) + 'static,
-    ) -> ModuleDescender {
+        on_statement: impl FnMut(&Statement, U) -> (U, U) + 'static,
+    ) -> ModuleDescender<U> {
         self.on_statement = Some(Box::new(on_statement));
         self
     }
 
     pub fn with_on_style_statement(
         mut self,
-        on_style_statement: impl FnMut(&StyleStatement) + 'static,
-    ) -> ModuleDescender {
+        on_style_statement: impl FnMut(&StyleStatement, U) -> (U, U) + 'static,
+    ) -> ModuleDescender<U> {
         self.on_style_statement = Some(Box::new(on_style_statement));
         self
     }
@@ -230,23 +270,45 @@ impl ModuleDescender {
     }
 
     pub fn descend_style_statement(&mut self, node: &StyleStatement) {
-        if let Some(on_style_statement) = &mut self.on_style_statement {
-            on_style_statement(node)
-        }
+        let sets = if let Some(on_style_statement) = &mut self.on_style_statement {
+            Some(on_style_statement(node, self.user_data.clone()))
+        } else {
+            None
+        };
+        let sets = if let Some(sets) = sets {
+            self.user_data = sets.0;
+            Some(sets.1)
+        } else {
+            None
+        };
         match node {
             StyleStatement::Style { body, .. } => self.descend_style_statements(body),
             _ => (),
         }
+        if let Some(sets) = sets {
+            self.user_data = sets;
+        }
     }
 
     pub fn descend_statement(&mut self, node: &Statement) {
-        if let Some(on_statement) = &mut self.on_statement {
-            on_statement(node)
-        }
+        let sets = if let Some(on_statement) = &mut self.on_statement {
+            Some(on_statement(node, self.user_data.clone()))
+        } else {
+            None
+        };
+        let sets = if let Some(sets) = sets {
+            self.user_data = sets.0;
+            Some(sets.1)
+        } else {
+            None
+        };
         match node {
             Statement::Element { body, .. } => self.descend(body),
             Statement::Style { body, .. } => self.descend_style_statements(body),
             Statement::UseStatement { .. } => (),
+        }
+        if let Some(sets) = sets {
+            self.user_data = sets;
         }
     }
 }
