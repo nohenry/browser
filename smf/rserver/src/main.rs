@@ -1,5 +1,6 @@
 #![feature(box_patterns)]
 
+use std::borrow::Borrow;
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, RwLock};
 
@@ -135,7 +136,9 @@ impl Backend {
     fn recurse_value(
         &self,
         value: &Value,
+        module: &Module,
         ctx: &Option<SpannedToken>,
+        scope_index: &mut Vec<usize>,
         builder: &mut SemanticTokenBuilder,
     ) {
         match value {
@@ -166,12 +169,28 @@ impl Backend {
                                     get_stype_index(SemanticTokenType::KEYWORD),
                                     0,
                                 );
+                                return;
                             }
                             CompletionType::Symbol(box CompletionType::Style) => {}
                             _ => (),
                         }
                     }
                 }
+                // TODO: lookup identifier in symbol tree
+                // if let SpannedToken(_, Token::Ident(ident)) = &tok {
+                if let Some(this_sym) = module.resolve_symbol_chain_indicies(scope_index.iter()) {
+                    if let Some(found_sym) = module.resolve_symbol(&this_sym, &value_str) {
+                        println!("Fund sym {}", found_sym.borrow().name);
+                        builder.push(
+                            tok.span().line_num,
+                            tok.span().position,
+                            tok.span().length,
+                            get_stype_index(SemanticTokenType::TYPE),
+                            0,
+                        );
+                    };
+                };
+                // }
                 builder.push(
                     tok.span().line_num,
                     tok.span().position,
@@ -202,7 +221,13 @@ impl Backend {
         }
     }
 
-    fn recurse_style(&self, stmt: &StyleStatement, builder: &mut SemanticTokenBuilder) {
+    fn recurse_style(
+        &self,
+        stmt: &StyleStatement,
+        module: &Module,
+        scope_index: &mut Vec<usize>,
+        builder: &mut SemanticTokenBuilder,
+    ) {
         match stmt {
             StyleStatement::Style { body, token, .. } => {
                 if let Some(token @ SpannedToken(_, Token::Ident(_i))) = token {
@@ -215,8 +240,10 @@ impl Backend {
                     );
                 }
 
-                for st in body {
-                    self.recurse_style(&st, builder);
+                for (i, st) in body.iter().enumerate() {
+                    scope_index.push(i);
+                    self.recurse_style(&st, module, scope_index, builder);
+                    scope_index.truncate(scope_index.len() - 1);
                 }
             }
             StyleStatement::StyleElement {
@@ -235,14 +262,20 @@ impl Backend {
                 }
 
                 if let Some(value) = value {
-                    self.recurse_value(value, key, builder)
+                    self.recurse_value(value, module, key, scope_index, builder)
                 }
             }
             _ => (),
         }
     }
 
-    fn recurse(&self, module: &Module, stmt: &Statement, builder: &mut SemanticTokenBuilder) {
+    fn recurse(
+        &self,
+        module: &Module,
+        stmt: &Statement,
+        scope_index: &mut Vec<usize>,
+        builder: &mut SemanticTokenBuilder,
+    ) {
         match stmt {
             Statement::Element {
                 arguments,
@@ -273,13 +306,15 @@ impl Backend {
                         }
 
                         if let Some(value) = &item.value {
-                            self.recurse_value(&value, &item.name, builder);
+                            self.recurse_value(&value, module, &item.name, scope_index, builder);
                         }
                     }
                 }
 
-                for st in body {
-                    self.recurse(module, &st, builder);
+                for (i, st) in body.iter().enumerate() {
+                    scope_index.push(i);
+                    self.recurse(module, &st, scope_index, builder);
+                    scope_index.truncate(scope_index.len() - 1);
                 }
             }
             Statement::Style { body, token, .. } => {
@@ -293,8 +328,10 @@ impl Backend {
                     );
                 }
 
-                for st in body {
-                    self.recurse_style(&st, builder);
+                for (i, st) in body.iter().enumerate() {
+                    scope_index.push(i);
+                    self.recurse_style(&st, module, scope_index, builder);
+                    scope_index.truncate(scope_index.len() - 1);
                 }
             }
             Statement::UseStatement { token, args } => {
@@ -628,8 +665,11 @@ impl LanguageServer for Backend {
 
             // let mut toks = Vec::new();
             let mut builder = SemanticTokenBuilder::new();
-            for tok in &mods.stmts {
-                self.recurse(mods, tok, &mut builder);
+            let mut scope = Vec::with_capacity(50);
+            scope.push(0);
+            for (i, tok) in mods.stmts.iter().enumerate() {
+                scope[0] = i;
+                self.recurse(mods, tok, &mut scope, &mut builder);
             }
             builder.build()
         };

@@ -10,3 +10,4 @@ neb_util = { path = "../neb_util" }
 log = { version = "*", features = ["std"] }
 tower-lsp = "*"
 pollster = "*"
+linked-hash-map = "*"

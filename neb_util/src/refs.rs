@@ -1,12 +1,9 @@
 use std::{
-    borrow::Borrow,
-    cell::RefCell,
     ops::Deref,
-    rc::Rc,
-    sync::{Arc, Mutex, MutexGuard},
+    sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard},
 };
 
-pub struct Rf<T: ?Sized>(pub Arc<Mutex<T>>);
+pub struct Rf<T: ?Sized>(pub Arc<RwLock<T>>);
 
 impl<T: ?Sized> Clone for Rf<T> {
     fn clone(&self) -> Self {
@@ -16,12 +13,12 @@ impl<T: ?Sized> Clone for Rf<T> {
 
 impl<T: std::fmt::Debug> std::fmt::Debug for Rf<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_tuple("Rf").field(&self.0.lock().unwrap()).finish()
+        f.debug_tuple("Rf").field(&self.borrow()).finish()
     }
 }
 
 impl<T> Deref for Rf<T> {
-    type Target = Mutex<T>;
+    type Target = RwLock<T>;
 
     fn deref(&self) -> &Self::Target {
         &self.0
@@ -30,13 +27,17 @@ impl<T> Deref for Rf<T> {
 
 impl<T> Rf<T> {
     pub fn new(t: T) -> Rf<T> {
-        Rf(Arc::new(Mutex::new(t)))
+        Rf(Arc::new(RwLock::new(t)))
     }
 
-    pub fn borrow(&self) -> MutexGuard<'_, T> {
-        self.lock().unwrap()
+    pub fn borrow_mut(&self) -> RwLockWriteGuard<'_, T> {
+        self.write().unwrap()
     }
 
+    pub fn borrow(&self) -> RwLockReadGuard<'_, T> {
+        self.read().unwrap()
+        // self.().unwrap()
+    }
 }
 
 impl<T> From<T> for Rf<T> {

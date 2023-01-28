@@ -12,8 +12,11 @@ setup {
     }
 }
 
-use setup.style
+use setup.style.centered
+
+
 
 view (class: centered) {
+    
 
 }

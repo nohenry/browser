@@ -4,6 +4,7 @@ use std::collections::HashMap;
 
 use ast::{Statement, StyleStatement};
 use lexer::Lexer;
+use linked_hash_map::LinkedHashMap;
 use log::{Log, SetLoggerError};
 use neb_util::{
     format::{NodeDisplay, TreeDisplay},
@@ -109,8 +110,78 @@ impl Module {
             .collect()
     }
 
-    pub fn resolve_symbol(&self, symbol_name: &str) {
+    pub fn resolve_symbol_in_scope<'a>(
+        &self,
+        symbol: &str,
+        scope: impl Iterator<Item = &'a String>,
+    ) -> Option<Rf<Symbol>> {
+        let Some(sym) = self.resolve_symbol_chain_string(scope) else {
+            return None
+        };
+        self.impl_resolve_symbol_in_scope(symbol, &sym)
+    }
 
+    pub fn impl_resolve_symbol_in_scope<'a>(
+        &self,
+        symbol: &str,
+        node: &Rf<Symbol>,
+    ) -> Option<Rf<Symbol>> {
+        let nodev = node.borrow();
+        match nodev.kind {
+            SymbolKind::Style(_) if nodev.name == symbol => return Some(node.clone()),
+            SymbolKind::Use(_) => return None,
+            _ => ()
+        }
+        if let Some(child) = nodev.children.get(symbol) {
+            Some(child.clone())
+        } else {
+            for (_, child) in &nodev.children {
+                let child = child.borrow();
+                if let SymbolKind::Use(scp) = &child.kind {
+                    return self.resolve_symbol_in_scope(symbol, scp.iter());
+                }
+            }
+            None
+        }
+    }
+
+    pub fn resolve_symbol(&self, node: &Rf<Symbol>, symbol_name: &str) -> Option<Rf<Symbol>> {
+        if let Some(node) = self.impl_resolve_symbol_in_scope(symbol_name, node) {
+            Some(node)
+        } else {
+            let Some(parent) = ({ &node.borrow().parent }) else {
+                    return None
+                };
+
+            self.resolve_symbol(parent, symbol_name)
+        }
+    }
+
+    pub fn resolve_symbol_chain_indicies<'a>(
+        &self,
+        iter: impl Iterator<Item = &'a usize>,
+    ) -> Option<Rf<Symbol>> {
+        self.impl_resolve_symbol_chain_indicies(&self.symbol_tree, iter)
+            .ok()
+    }
+
+    fn impl_resolve_symbol_chain_indicies<'a>(
+        &self,
+        last: &Rf<Symbol>,
+        mut iter: impl Iterator<Item = &'a usize>,
+    ) -> Result<Rf<Symbol>, bool> {
+        if let Some(index) = iter.next() {
+            if let Some(s) = last.borrow().children.values().nth(*index) {
+                match self.impl_resolve_symbol_chain_indicies(s, iter) {
+                    Ok(n) => return Ok(n),
+                    Err(true) => return Ok(s.clone()),
+                    _ => (),
+                }
+            }
+        } else {
+            return Err(true);
+        }
+        Err(false)
     }
 
     pub fn resolve_symbol_chain<'a>(
@@ -118,6 +189,14 @@ impl Module {
         iter: impl Iterator<Item = &'a SpannedToken>,
     ) -> Option<Rf<Symbol>> {
         self.impl_resolve_from_iter(&self.symbol_tree, iter).ok()
+    }
+
+    pub fn resolve_symbol_chain_string<'a>(
+        &self,
+        iter: impl Iterator<Item = &'a String>,
+    ) -> Option<Rf<Symbol>> {
+        self.impl_resolve_from_iter_string(&self.symbol_tree, iter)
+            .ok()
     }
 
     pub fn iter_symbol<'a, F: FnMut(&SpannedToken, &Rf<Symbol>)>(
@@ -151,7 +230,26 @@ impl Module {
             if let Some(s) = last.borrow().children.get(i) {
                 match self.impl_resolve_from_iter(s, iter) {
                     Ok(n) => return Ok(n),
-                    Err(true) if &s.borrow().name == i => return Ok(s.clone()),
+                    Err(true) => return Ok(s.clone()),
+                    _ => (),
+                }
+            }
+        } else {
+            return Err(true);
+        }
+        Err(false)
+    }
+
+    fn impl_resolve_from_iter_string<'a>(
+        &self,
+        last: &Rf<Symbol>,
+        mut iter: impl Iterator<Item = &'a String>,
+    ) -> Result<Rf<Symbol>, bool> {
+        if let Some(i) = iter.next() {
+            if let Some(s) = last.borrow().children.get(i) {
+                match self.impl_resolve_from_iter_string(s, iter) {
+                    Ok(n) => return Ok(n),
+                    Err(true) => return Ok(s.clone()),
                     _ => (),
                 }
             }
@@ -174,7 +272,7 @@ pub struct Symbol {
     pub name: String,
     pub kind: SymbolKind,
     pub parent: Option<Rf<Symbol>>,
-    pub children: HashMap<String, Rf<Symbol>>,
+    pub children: LinkedHashMap<String, Rf<Symbol>>,
 }
 
 impl NodeDisplay for Symbol {
@@ -206,7 +304,7 @@ impl Symbol {
             name: "root".to_string(),
             kind: SymbolKind::Root,
             parent: None,
-            children: HashMap::new(),
+            children: LinkedHashMap::new(),
         })
     }
 
@@ -215,10 +313,10 @@ impl Symbol {
             name: name.to_string(),
             kind,
             parent: Some(symb.clone()),
-            children: HashMap::new(),
+            children: LinkedHashMap::new(),
         });
 
-        symb.borrow().children.insert(name.to_string(), new.clone());
+        symb.borrow_mut().children.insert(name.to_string(), new.clone());
 
         new
     }
