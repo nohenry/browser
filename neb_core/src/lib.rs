@@ -2,8 +2,6 @@
 
 pub mod dom_parser;
 
-pub mod tree_display;
-
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 

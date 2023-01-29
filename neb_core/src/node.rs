@@ -1,4 +1,10 @@
-use std::{cell::Ref, collections::HashMap, fmt::Display, slice::Iter, sync::MutexGuard};
+use std::{
+    cell::Ref,
+    collections::HashMap,
+    fmt::Display,
+    slice::Iter,
+    sync::{MutexGuard, RwLockReadGuard},
+};
 
 use neb_graphics::{
     drawing_context::DrawingContext,
@@ -22,9 +28,8 @@ use crate::{
     ids::{get_id_mgr, ID},
     psize,
     styling::{Selector, StyleValue, UnitValue},
-    tree_display::TreeDisplay,
 };
-use neb_util::Rf;
+use neb_util::{Rf, format::{TreeDisplay, NodeDisplay}};
 
 /// The node type is a specific type of element
 /// The most common element is the `Div` which is for general use case
@@ -241,15 +246,12 @@ impl Node {
         }
     }
 
-    pub fn bparent(&self) -> MutexGuard<'_, Node> {
-        self.parent
-            .as_ref()
-            .expect("Expected parent node!")
-            .borrow()
+    pub fn bparent(&self) -> RwLockReadGuard<'_, Node> {
+        self.parent.as_ref().unwrap().borrow()
     }
 }
 
-impl Display for Node {
+impl NodeDisplay for Node {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         // self.ty.fmt(f)
         write!(f, "{} - {}", self.ty, self.element.id)
@@ -261,9 +263,9 @@ impl TreeDisplay for Node {
         self.children.len()
     }
 
-    fn child_at(&self, index: usize) -> Option<Rf<dyn TreeDisplay>> {
+    fn child_at(&self, index: usize) -> Option<&dyn TreeDisplay> {
         if index < self.children.len() {
-            Some(Rf(self.children[index].0.clone()))
+            Some(&self.children[index])
         } else {
             None
         }

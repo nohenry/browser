@@ -1,9 +1,10 @@
 setup {
     style {
         centered {
-            direction: Horizontal
+            direction: Vertical
             gap: 50
             visible: false
+            color: rgb(1, 1, 2) 
         }
 
         box {

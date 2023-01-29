@@ -266,11 +266,16 @@ pub enum Value {
         ident: Option<SpannedToken>,
         args: ElementArgs,
     },
+    Tuple(Vec<Value>),
 }
 
 impl AstNode for Value {
     fn get_range(&self) -> Range {
         match self {
+            Self::Tuple(s) => match (s.first(), s.last()) {
+                (Some(s), Some(e)) => Range::from((&s.get_range(), &e.get_range())),
+                _ => Range::default(),
+            },
             Self::Integer(_, s) => s.0.into(),
             Self::Float(_, s) => s.0.into(),
             Self::Ident(s) => s.0.into(),

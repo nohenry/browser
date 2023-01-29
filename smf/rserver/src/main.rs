@@ -1,11 +1,9 @@
 #![feature(box_patterns)]
 
-use std::borrow::Borrow;
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, RwLock};
 
-use neb_smf::ast::{AstNode, Expression, Statement, StyleStatement, Value};
-use neb_smf::logger::ClientLogger;
+use neb_smf::ast::{AstNode, ElementArgs, Statement, StyleStatement, Value};
 use neb_smf::token::{Operator, Span, SpannedToken, Token};
 use neb_smf::{Module, SymbolKind};
 use tokio::net::TcpListener;
@@ -96,15 +94,12 @@ impl SemanticTokenBuilder {
 
 const PROPERTY_COMPLETES: &[&str] = &["class"];
 
-// #[derive(Debug)]
 struct Backend {
-    // semantic_types: HashSet<&'static SemanticTokenType>,
     element_names: HashSet<String>,
     style_enum: HashMap<String, CompletionType>,
 
     documents: RwLock<HashMap<Url, Module>>,
     client: Arc<Client>,
-    logger: ClientLogger,
 }
 
 fn get_stype_index(ty: SemanticTokenType) -> u32 {
@@ -119,20 +114,6 @@ fn get_stype_index_from_str(ty: &str) -> u32 {
 }
 
 impl Backend {
-    fn recurse_expression(&self, ele: &Expression, builder: &mut SemanticTokenBuilder) {
-        match ele {
-            Expression::Ident(i) => {
-                builder.push(
-                    i.span().line_num,
-                    i.span().position,
-                    i.span().length,
-                    get_stype_index(SemanticTokenType::VARIABLE),
-                    0,
-                );
-            }
-        }
-    }
-
     fn recurse_value(
         &self,
         value: &Value,
@@ -217,6 +198,24 @@ impl Backend {
                     0,
                 );
             }
+            Value::Function { ident, args } => {
+                if let Some(ident @ SpannedToken(_, Token::Ident(nm))) = ident {
+                    if let Some(scp) = module.resolve_symbol_chain_indicies(scope_index.iter()) {
+                        if let Some(_) = module.resolve_symbol(&scp, nm) {
+                            builder.push(
+                                ident.span().line_num,
+                                ident.span().position,
+                                ident.span().length,
+                                get_stype_index(SemanticTokenType::FUNCTION),
+                                0,
+                            );
+                        }
+                    }
+                }
+
+                self.recurse_args(module, args, scope_index, builder);
+            }
+            Value::Tuple(_) => (),
             _ => (),
         }
     }
@@ -241,9 +240,9 @@ impl Backend {
                 }
 
                 for (i, st) in body.iter().enumerate() {
-                    scope_index.push(i);
+                    // scope_index.push(i);
                     self.recurse_style(&st, module, scope_index, builder);
-                    scope_index.truncate(scope_index.len() - 1);
+                    // scope_index.truncate(scope_index.len() - 1);
                 }
             }
             StyleStatement::StyleElement {
@@ -265,7 +264,30 @@ impl Backend {
                     self.recurse_value(value, module, key, scope_index, builder)
                 }
             }
-            _ => (),
+        }
+    }
+
+    fn recurse_args(
+        &self,
+        module: &Module,
+        args: &ElementArgs,
+        scope_index: &mut Vec<usize>,
+        builder: &mut SemanticTokenBuilder,
+    ) {
+        for item in args.iter_items() {
+            if let Some(name) = &item.name {
+                builder.push(
+                    name.span().line_num,
+                    name.span().position,
+                    name.span().length,
+                    get_stype_index(SemanticTokenType::VARIABLE),
+                    0,
+                );
+            }
+
+            if let Some(value) = &item.value {
+                self.recurse_value(&value, module, &item.name, scope_index, builder);
+            }
         }
     }
 
@@ -293,22 +315,8 @@ impl Backend {
                     );
                 }
 
-                for st in arguments {
-                    for item in st.iter_items() {
-                        if let Some(name) = &item.name {
-                            builder.push(
-                                name.span().line_num,
-                                name.span().position,
-                                name.span().length,
-                                get_stype_index(SemanticTokenType::VARIABLE),
-                                0,
-                            );
-                        }
-
-                        if let Some(value) = &item.value {
-                            self.recurse_value(&value, module, &item.name, scope_index, builder);
-                        }
-                    }
+                if let Some(args) = arguments {
+                    self.recurse_args(module, args, scope_index, builder) 
                 }
 
                 for (i, st) in body.iter().enumerate() {
@@ -363,32 +371,8 @@ impl Backend {
                         );
                     }
                 });
-
-                // for (arg, _) in args.iter() {
-                //     builder.push(
-                //         arg.span().line_num,
-                //         arg.span().position,
-                //         arg.span().length,
-                //         get_stype_index_from_str("namespace"),
-                //         0,
-                //     )
-                // }
             }
         }
-    }
-
-    fn bsearch_expression(&self, item: &Expression, span: &Span) -> Option<Vec<CompletionItem>> {
-        match item {
-            Expression::Ident(i) => {
-                if i.0.contains(span) {
-                    return Some(vec![CompletionItem::new_simple(
-                        "Potato".into(),
-                        "lfkjsdofi".into(),
-                    )]);
-                }
-            }
-        }
-        None
     }
 
     fn bsearch_value_with_key(
@@ -480,11 +464,6 @@ impl Backend {
         span: &Span,
     ) -> Option<Vec<CompletionItem>> {
         match item {
-            // Statement::Expression(e) => {
-            //     if e.get_range().contains(span) {
-            //         return self.bsearch_expression(e, span);
-            //     }
-            // }
             Statement::Element {
                 arguments,
                 body,
@@ -577,7 +556,7 @@ impl Backend {
                     }
                 }
             }
-            Statement::UseStatement { token, args } => {
+            Statement::UseStatement { args, .. } => {
                 if let Some((_, Some(SpannedToken(_, Token::Operator(Operator::Dot))))) =
                     args.iter().last()
                 {
@@ -617,6 +596,7 @@ impl LanguageServer for Backend {
                 text_document_sync: Some(TextDocumentSyncCapability::Kind(
                     TextDocumentSyncKind::FULL,
                 )),
+                color_provider: Some(ColorProviderCapability::Simple(true)),
                 semantic_tokens_provider: Some(
                     SemanticTokensServerCapabilities::SemanticTokensOptions(
                         SemanticTokensOptions {
@@ -654,8 +634,6 @@ impl LanguageServer for Backend {
         &self,
         params: SemanticTokensParams,
     ) -> Result<Option<SemanticTokensResult>> {
-        // .await;
-
         let toks = {
             let map = &*self.documents.read().unwrap();
 
@@ -663,7 +641,6 @@ impl LanguageServer for Backend {
                 return Ok(None)
             };
 
-            // let mut toks = Vec::new();
             let mut builder = SemanticTokenBuilder::new();
             let mut scope = Vec::with_capacity(50);
             scope.push(0);
@@ -746,6 +723,40 @@ impl LanguageServer for Backend {
         Ok(params)
     }
 
+    async fn document_color(&self, params: DocumentColorParams) -> Result<Vec<ColorInformation>> {
+        println!("Params: {:?}", params);
+        Ok(vec![ColorInformation {
+            color: Color {
+                red: 1.0,
+                green: 0.0,
+                blue: 0.0,
+                alpha: 1.0,
+            },
+            range: Range {
+                start: Position {
+                    line: 1,
+                    character: 5,
+                },
+                end: Position {
+                    line: 1,
+                    character: 8,
+                },
+            },
+        }])
+    }
+
+    async fn color_presentation(
+        &self,
+        params: ColorPresentationParams,
+    ) -> Result<Vec<ColorPresentation>> {
+        println!("Params: {:?}", params);
+        Ok(vec![ColorPresentation {
+            label: "fsdlkf".to_string(),
+            text_edit: None,
+            additional_text_edits: None,
+        }])
+    }
+
     async fn initialized(&self, _p: InitializedParams) {
         self.client
             .log_message(MessageType::INFO, "server initialized!")
@@ -802,32 +813,12 @@ async fn main() {
     #[cfg(feature = "runtime-agnostic")]
     use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
 
-    // tracing_subscriber::fmt().init();
-
     let _args = std::env::args();
-    // let stream = match args.nth(1).as_deref() {
-    //     None => {
-    //         // If no argument is supplied (args is just the program name), then
-    //         // we presume that the client has opened the TCP port and is waiting
-    //         // for us to connect. This is the connection pattern used by clients
-    //         // built with vscode-langaugeclient.
-    //         TcpStream::connect("127.0.0.1:5007").await.unwrap()
-    //     }
-    //     Some("--listen") => {
-    // If the `--listen` argument is supplied, then the roles are
-    // reversed: we need to start a server and wait for the client to
-    // connect.
+
     let listener = TcpListener::bind("127.0.0.1:5007").await.unwrap();
     println!("cjkdsfj");
     let (stream, _) = listener.accept().await.unwrap();
     println!("Connection");
-    //         stream
-    //     }
-    //     Some(arg) => panic!(
-    //         "Unrecognized argument: {}. Use --listen to listen for connections.",
-    //         arg
-    //     ),
-    // };
 
     let (read, write) = tokio::io::split(stream);
     #[cfg(feature = "runtime-agnostic")]
@@ -847,10 +838,10 @@ async fn main() {
                     "class".to_string(),
                     CompletionType::Symbol(Box::new(CompletionType::Style)),
                 ),
+                ("color".to_string(), CompletionType::Boolean),
             ]),
             documents: RwLock::new(HashMap::new()),
             client: client.clone(),
-            logger: ClientLogger(client.clone()),
         };
 
         res

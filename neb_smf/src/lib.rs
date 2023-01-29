@@ -1,8 +1,6 @@
 #![feature(trait_upcasting)]
 
-use std::collections::HashMap;
-
-use ast::{Statement, StyleStatement};
+use ast::{Statement, StyleStatement, Value};
 use lexer::Lexer;
 use linked_hash_map::LinkedHashMap;
 use log::{Log, SetLoggerError};
@@ -58,7 +56,6 @@ pub async fn parse_str(input: String) -> (Module, Vec<ParseError>) {
                         return (cd, ud);
                     }
                 }
-                _ => (),
             }
             (ud.clone(), ud)
         })
@@ -70,7 +67,6 @@ pub async fn parse_str(input: String) -> (Module, Vec<ParseError>) {
                     token: Some(SpannedToken(_, Token::Ident(i))),
                 } => {
                     let cd = Symbol::insert(&ud, &i, SymbolKind::Style(st.clone()));
-                    // let cd = Symbol::insert(&ud, &i, SymbolKind::Style(st.clone()));
                     return (cd, ud);
                 }
                 _ => (),
@@ -79,6 +75,19 @@ pub async fn parse_str(input: String) -> (Module, Vec<ParseError>) {
         });
 
     md.descend(&parsed);
+
+    {
+        // let mods = mods.borrow_mut();
+        Symbol::insert(
+            &mods,
+            "rgb",
+            SymbolKind::Function {
+                args: vec![Type::Integer, Type::Integer, Type::Integer],
+                return_type: Type::Tuple(vec![Type::Integer, Type::Integer, Type::Integer]),
+                func: Box::new(|vals| Some(Value::Tuple(vals))),
+            },
+        );
+    }
 
     println!("{}", mods.format());
 
@@ -130,7 +139,7 @@ impl Module {
         match nodev.kind {
             SymbolKind::Style(_) if nodev.name == symbol => return Some(node.clone()),
             SymbolKind::Use(_) => return None,
-            _ => ()
+            _ => (),
         }
         if let Some(child) = nodev.children.get(symbol) {
             Some(child.clone())
@@ -260,9 +269,31 @@ impl Module {
     }
 }
 
+pub enum Type {
+    None,
+    Float,
+    Integer,
+    Ident(String),
+    Tuple(Vec<Type>),
+}
+
+impl Type {
+    pub fn value_is_type(&self, value: &Value) -> bool {
+        match (self, value) {
+            (Type::Float, Value::Float(_, _)) => true,
+            (Type::Integer, Value::Integer(_, _)) => true,
+            _ => false,
+        }
+    }
+}
+
 pub enum SymbolKind {
     Node,
-    // StyleNode,
+    Function {
+        args: Vec<Type>,
+        return_type: Type,
+        func: Box<dyn Fn(Vec<Value>) -> Option<Value> + Send + Sync>,
+    },
     Style(StyleStatement),
     Use(Vec<String>),
     Root,
@@ -279,6 +310,7 @@ impl NodeDisplay for Symbol {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match &self.kind {
             SymbolKind::Root => f.write_str("Root"),
+            SymbolKind::Function { .. } => write!(f, "Function `{}`", self.name),
             SymbolKind::Node => write!(f, "Node `{}`", self.name),
             SymbolKind::Style(_) => write!(f, "Style `{}`", self.name),
             SymbolKind::Use(_) => write!(f, "Use"),
@@ -316,7 +348,9 @@ impl Symbol {
             children: LinkedHashMap::new(),
         });
 
-        symb.borrow_mut().children.insert(name.to_string(), new.clone());
+        symb.borrow_mut()
+            .children
+            .insert(name.to_string(), new.clone());
 
         new
     }

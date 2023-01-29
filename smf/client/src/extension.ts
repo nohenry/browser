@@ -56,20 +56,20 @@ export function activate(context: ExtensionContext) {
 
 	let serverOptions = () => {
 		return new Promise<StreamInfo>((resolve, reject) => {
-			// let ls = exec(`${serverModule}`)
+			let ls = exec(`${serverModule}`)
 
 
 
 
-			// ls.stdout.on('data', (data) => {
-				// console.log('fjsdklf', data)
+			ls.stdout.on('data', (data) => {
+				console.log('fjsdklf', data)
 				let socket = net.connect(connectionInfo);
 				let result: StreamInfo = {
 					writer: socket,
 					reader: socket
 				};
 				resolve(result)
-			// });
+			});
 		})
 		// Connect to language server via socket
 		// let ls = exec(`${serverModule}`)
