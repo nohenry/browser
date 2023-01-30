@@ -5,7 +5,7 @@ use std::sync::{Arc, RwLock};
 
 use neb_smf::ast::{AstNode, ElementArgs, Statement, StyleStatement, Value};
 use neb_smf::token::{Operator, Span, SpannedToken, Token};
-use neb_smf::{Module, SymbolKind};
+use neb_smf::{Module, ModuleDescender, MutModuleDescender, SymbolKind};
 use tokio::net::TcpListener;
 use tower_lsp::jsonrpc::Result;
 use tower_lsp::lsp_types::request::Request;
@@ -316,7 +316,7 @@ impl Backend {
                 }
 
                 if let Some(args) = arguments {
-                    self.recurse_args(module, args, scope_index, builder) 
+                    self.recurse_args(module, args, scope_index, builder)
                 }
 
                 for (i, st) in body.iter().enumerate() {
@@ -594,7 +594,7 @@ impl LanguageServer for Backend {
         Ok(InitializeResult {
             capabilities: ServerCapabilities {
                 text_document_sync: Some(TextDocumentSyncCapability::Kind(
-                    TextDocumentSyncKind::FULL,
+                    TextDocumentSyncKind::INCREMENTAL,
                 )),
                 color_provider: Some(ColorProviderCapability::Simple(true)),
                 semantic_tokens_provider: Some(
@@ -725,24 +725,46 @@ impl LanguageServer for Backend {
 
     async fn document_color(&self, params: DocumentColorParams) -> Result<Vec<ColorInformation>> {
         println!("Params: {:?}", params);
-        Ok(vec![ColorInformation {
-            color: Color {
-                red: 1.0,
-                green: 0.0,
-                blue: 0.0,
-                alpha: 1.0,
-            },
-            range: Range {
-                start: Position {
-                    line: 1,
-                    character: 5,
-                },
-                end: Position {
-                    line: 1,
-                    character: 8,
-                },
-            },
-        }])
+
+        let res = {
+            let map = &*self.documents.read().unwrap();
+            let Some(mods) = map.get(&params.text_document.uri) else {
+                return Ok(vec![])
+            };
+
+            let color_info = Vec::new();
+            let md = ModuleDescender::new(color_info).with_on_value(|key, val, ud| {
+                match val {
+                    Value::Function {
+                        ident: Some(SpannedToken(spn, Token::Ident(id))),
+                        args,
+                    } => match id.as_str() {
+                        "rgb" => {
+                            let args: Option<Vec<&Value>> = args.iter_items().map(|val| val.value.as_ref()).collect();
+                            let Some(args) = args else {
+                                return ud;
+                            };
+                            let [Value::Integer(r, _), Value::Integer(g, _), Value::Integer(b, _)] = &args[..] else {
+                                return ud;
+                            };
+                            return ud.into_iter().chain([
+                                ColorInformation {
+                                    color: Color { red: *r as f32 / 255.0, green: *g as f32 / 255.0, blue: *b as f32 / 255.0, alpha: 1.0 },
+                                    range: Range::new(Position { line: spn.line_num, character: spn.position }, Position { line: spn.line_num, character: spn.position + 1 })
+                                }
+                            ].into_iter()).collect();
+                        }
+                        _ => (),
+                    },
+                    _ => (),
+                }
+                ud
+            });
+
+            let color_info = md.descend(&mods.stmts);
+
+            return Ok(color_info);
+        };
     }
 
     async fn color_presentation(
@@ -750,6 +772,88 @@ impl LanguageServer for Backend {
         params: ColorPresentationParams,
     ) -> Result<Vec<ColorPresentation>> {
         println!("Params: {:?}", params);
+
+        let map = &*self.documents.read().unwrap();
+        let Some(mods) = map.get(&params.text_document.uri) else {
+                return Ok(vec![])
+            };
+
+        let Color {
+            red,
+            green,
+            blue,
+            alpha,
+        } = params.color;
+
+        let color_info = Vec::new();
+        let md = ModuleDescender::new(color_info).with_on_value(move |key, val, ud| {
+            match val {
+                Value::Function {
+                    ident: Some(SpannedToken(spn, Token::Ident(id))),
+                    args,
+                } => match id.as_str() {
+                    "rgb" => {
+                        let Position {
+                            line: sl,
+                            character: sc,
+                        } = params.range.start;
+                        let Position {
+                            line: el,
+                            character: ec,
+                        } = params.range.end;
+
+                        let text_edit = if sl == spn.line_num
+                            && sc == spn.position
+                            && el == spn.line_num
+                            && ec == spn.position + 1
+                        {
+                            let rng = args.get_range();
+                            Some(TextEdit {
+                                range: Range {
+                                    start: Position {
+                                        line: rng.start.line_num,
+                                        character: rng.start.position,
+                                    },
+                                    end: Position {
+                                        line: rng.end.line_num,
+                                        character: rng.end.position + rng.end.length,
+                                    },
+                                },
+                                new_text: format!(
+                                    "({}, {}, {})",
+                                    (red * 255.0) as u32,
+                                    (green * 255.0) as u32,
+                                    (blue * 255.0) as u32
+                                ),
+                            })
+                        } else {
+                            None
+                        };
+
+                        return ud
+                            .into_iter()
+                            .chain(
+                                [ColorPresentation {
+                                    label: id.clone(),
+                                    text_edit,
+                                    additional_text_edits: None,
+                                }]
+                                .into_iter(),
+                            )
+                            .collect();
+                    }
+                    _ => (),
+                },
+                _ => (),
+            }
+            ud
+        });
+
+        let color_info = md.descend(&mods.stmts);
+        println!("{:?}", color_info);
+
+        return Ok(color_info);
+
         Ok(vec![ColorPresentation {
             label: "fsdlkf".to_string(),
             text_edit: None,
@@ -777,18 +881,73 @@ impl LanguageServer for Backend {
     }
 
     async fn did_change(&self, params: DidChangeTextDocumentParams) {
-        let mut p = params.content_changes;
-        let text = p.remove(0);
-        let text = text.text;
+        println!("Change {:?}", params);
 
-        let out = neb_smf::parse_str(text).await;
-        println!("{}", out.0.format());
+        let doc = params.text_document;
+        for change in params.content_changes {
+            if let Some(range) = change.range {
+                let map = &mut *self.documents.write().unwrap();
+                let Some(mods) = map.get_mut(&doc.uri) else {
+                    return;
+                };
 
-        for err in out.1 {
-            self.client.log_message(MessageType::ERROR, err).await;
+                let md = MutModuleDescender::new(false)
+                    .with_callback_first(false)
+                    .with_on_value(move |key, val, ud| {
+                        let rng = val.get_range();
+                        let rng = to_rng(&rng);
+
+                        // if rng == range {}
+                        if range_contains(&range, &rng) {
+                            println!("Contains");
+                        }
+                        println!("Value: {:?}", val);
+                        println!("Content: {:?} {:?}", rng, range);
+
+                        ud
+                    })
+                    .with_on_style_statement(move |stmt, ud| {
+                        let rng = stmt.get_range();
+                        let rng = to_rng(&rng);
+
+                        if range_contains(&range, &rng) {
+                            println!("Contains");
+                        }
+                        // println!("Statent: {:?}", val);
+                        println!("Statemnt : {:?} {:?}", rng, range);
+
+                        (ud, ud)
+                    });
+
+                let _ = md.descend(&mut mods.stmts);
+            } else {
+                let text = change.text;
+
+                let out = neb_smf::parse_str(text).await;
+                println!("{}", out.0.format());
+
+                for err in out.1 {
+                    self.client.log_message(MessageType::ERROR, err).await;
+                }
+
+                (*(self.documents.write().unwrap())).insert(doc.uri.clone(), out.0);
+
+                self.client.semantic_tokens_refresh().await.unwrap();
+            }
         }
 
-        (*(self.documents.write().unwrap())).insert(params.text_document.uri, out.0);
+        // let mut p = params.content_changes;
+        // let text = p.remove(0);
+        // let text = text.text;
+
+        // let out = neb_smf::parse_str(text).await;
+        // println!("{}", out.0.format());
+
+        // for err in out.1 {
+        //     self.client.log_message(MessageType::ERROR, err).await;
+        // }
+
+        // (*(self.documents.write().unwrap())).insert(params.text_document.uri, out.0);
 
         // self.client.semantic_tokens_refresh().await.unwrap();
     }
@@ -847,4 +1006,39 @@ async fn main() {
         res
     });
     Server::new(read, write, socket).serve(service).await;
+}
+
+#[inline]
+fn to_rng(range: &neb_smf::token::Range) -> Range {
+    if range.start == range.end {
+        Range::new(
+            Position {
+                line: range.start.line_num,
+                character: range.start.position,
+            },
+            Position {
+                line: range.start.line_num,
+                character: range.start.position + range.start.length,
+            },
+        )
+    } else {
+        Range::new(
+            Position {
+                line: range.start.line_num,
+                character: range.start.position,
+            },
+            Position {
+                line: range.end.line_num,
+                character: range.end.position + range.end.length,
+            },
+        )
+    }
+}
+
+#[inline]
+fn range_contains(inner: &Range, outer: &Range) -> bool {
+    inner.start.line >= outer.start.line
+        && inner.end.line <= outer.end.line
+        && inner.start.character >= outer.start.character
+        && inner.end.character <= outer.end.character
 }

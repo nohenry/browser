@@ -1,3 +1,5 @@
+use std::fmt::Debug;
+
 use neb_util::format::{NodeDisplay, TreeDisplay};
 
 use crate::token::{Range, SpannedToken, Token};
@@ -301,6 +303,12 @@ impl NodeDisplay for Value {
             Self::Function { ident: None, .. } => write!(f, "Function"),
             _ => panic!(),
         }
+    }
+}
+
+impl Debug for Value {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        <Value as NodeDisplay>::fmt(&self, f)
     }
 }
 

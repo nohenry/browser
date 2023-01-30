@@ -361,6 +361,7 @@ pub struct ModuleDescender<U: Clone> {
     user_data: U,
     on_statement: Option<Box<dyn FnMut(&Statement, U) -> (U, U)>>,
     on_style_statement: Option<Box<dyn FnMut(&StyleStatement, U) -> (U, U)>>,
+    on_value: Option<Box<dyn FnMut(Option<&SpannedToken>, &Value, U) -> U>>,
     // on_value: Option<Box<fn(statement: &Value)>>,
 }
 
@@ -370,6 +371,7 @@ impl<U: Clone> ModuleDescender<U> {
             user_data,
             on_statement: None,
             on_style_statement: None,
+            on_value: None,
         }
     }
 
@@ -389,15 +391,30 @@ impl<U: Clone> ModuleDescender<U> {
         self
     }
 
-    pub fn descend(&mut self, node: &Vec<Statement>) {
+    pub fn with_on_value(
+        mut self,
+        on_value: impl FnMut(Option<&SpannedToken>, &Value, U) -> U + 'static,
+    ) -> ModuleDescender<U> {
+        self.on_value = Some(Box::new(on_value));
+        self
+    }
+
+    pub fn descend(mut self, node: &Vec<Statement>) -> U {
         for node in node {
             self.descend_statement(node)
         }
+        self.user_data
     }
 
     pub fn descend_style_statements(&mut self, node: &Vec<StyleStatement>) {
         for node in node {
             self.descend_style_statement(node)
+        }
+    }
+
+    pub fn descend_value(&mut self, key: Option<&SpannedToken>, node: &Value) {
+        if let Some(on_value) = &mut self.on_value {
+            self.user_data = on_value(key, node, self.user_data.clone())
         }
     }
 
@@ -415,6 +432,11 @@ impl<U: Clone> ModuleDescender<U> {
         };
         match node {
             StyleStatement::Style { body, .. } => self.descend_style_statements(body),
+            StyleStatement::StyleElement {
+                key,
+                value: Some(node),
+                ..
+            } => self.descend_value(key.as_ref(), node),
             _ => (),
         }
         if let Some(sets) = sets {
@@ -435,12 +457,160 @@ impl<U: Clone> ModuleDescender<U> {
             None
         };
         match node {
-            Statement::Element { body, .. } => self.descend(body),
+            Statement::Element { body, .. } => body.iter().for_each(|s| self.descend_statement(s)),
             Statement::Style { body, .. } => self.descend_style_statements(body),
             Statement::UseStatement { .. } => (),
         }
         if let Some(sets) = sets {
             self.user_data = sets;
+        }
+    }
+}
+
+#[derive(Default)]
+pub struct MutModuleDescender<U: Clone> {
+    callback_first: bool,
+    user_data: U,
+    on_statement: Option<Box<dyn FnMut(&mut Statement, U) -> (U, U)>>,
+    on_style_statement: Option<Box<dyn FnMut(&mut StyleStatement, U) -> (U, U)>>,
+    on_value: Option<Box<dyn FnMut(Option<&mut SpannedToken>, &mut Value, U) -> U>>,
+    // on_value: Option<Box<fn(statement: &Value)>>,
+}
+
+impl<U: Clone> MutModuleDescender<U> {
+    pub fn new(user_data: U) -> MutModuleDescender<U> {
+        MutModuleDescender {
+            callback_first: true,
+            user_data,
+            on_statement: None,
+            on_style_statement: None,
+            on_value: None,
+        }
+    }
+
+    pub fn with_on_statement(
+        mut self,
+        on_statement: impl FnMut(&mut Statement, U) -> (U, U) + 'static,
+    ) -> MutModuleDescender<U> {
+        self.on_statement = Some(Box::new(on_statement));
+        self
+    }
+
+    pub fn with_on_style_statement(
+        mut self,
+        on_style_statement: impl FnMut(&mut StyleStatement, U) -> (U, U) + 'static,
+    ) -> MutModuleDescender<U> {
+        self.on_style_statement = Some(Box::new(on_style_statement));
+        self
+    }
+
+    pub fn with_on_value(
+        mut self,
+        on_value: impl FnMut(Option<&mut SpannedToken>, &mut Value, U) -> U + 'static,
+    ) -> MutModuleDescender<U> {
+        self.on_value = Some(Box::new(on_value));
+        self
+    }
+
+    pub fn with_callback_first(mut self, callback_first: bool) -> MutModuleDescender<U> {
+        self.callback_first = callback_first;
+        self
+    }
+
+    pub fn descend(mut self, node: &mut Vec<Statement>) -> U {
+        for node in node {
+            self.descend_statement(node)
+        }
+        self.user_data
+    }
+
+    pub fn descend_style_statements(&mut self, node: &mut Vec<StyleStatement>) {
+        for node in node {
+            self.descend_style_statement(node)
+        }
+    }
+
+    pub fn descend_value(&mut self, key: Option<&mut SpannedToken>, node: &mut Value) {
+        if let Some(on_value) = &mut self.on_value {
+            self.user_data = on_value(key, node, self.user_data.clone())
+        }
+    }
+
+    pub fn descend_style_statement(&mut self, node: &mut StyleStatement) {
+        if self.callback_first {
+            let sets = if let Some(on_style_statement) = &mut self.on_style_statement {
+                Some(on_style_statement(node, self.user_data.clone()))
+            } else {
+                None
+            };
+            let sets = if let Some(sets) = sets {
+                self.user_data = sets.0;
+                Some(sets.1)
+            } else {
+                None
+            };
+            match node {
+                StyleStatement::Style { body, .. } => self.descend_style_statements(body),
+                StyleStatement::StyleElement {
+                    key,
+                    value: Some(node),
+                    ..
+                } => self.descend_value(key.as_mut(), node),
+                _ => (),
+            }
+            if let Some(sets) = sets {
+                self.user_data = sets;
+            }
+        } else {
+            match node {
+                StyleStatement::Style { body, .. } => self.descend_style_statements(body),
+                StyleStatement::StyleElement {
+                    key,
+                    value: Some(node),
+                    ..
+                } => self.descend_value(key.as_mut(), node),
+                _ => (),
+            }
+            if let Some(on_style_statement) = &mut self.on_style_statement {
+                self.user_data = on_style_statement(node, self.user_data.clone()).1
+            }
+        }
+    }
+
+    pub fn descend_statement(&mut self, node: &mut Statement) {
+        if self.callback_first {
+            let sets = if let Some(on_statement) = &mut self.on_statement {
+                Some(on_statement(node, self.user_data.clone()))
+            } else {
+                None
+            };
+            let sets = if let Some(sets) = sets {
+                self.user_data = sets.0;
+                Some(sets.1)
+            } else {
+                None
+            };
+            match node {
+                Statement::Element { body, .. } => {
+                    body.iter_mut().for_each(|s| self.descend_statement(s))
+                }
+                Statement::Style { body, .. } => self.descend_style_statements(body),
+                Statement::UseStatement { .. } => (),
+            }
+            if let Some(sets) = sets {
+                self.user_data = sets;
+            }
+        } else {
+            match node {
+                Statement::Element { body, .. } => {
+                    body.iter_mut().for_each(|s| self.descend_statement(s))
+                }
+                Statement::Style { body, .. } => self.descend_style_statements(body),
+                Statement::UseStatement { .. } => (),
+            }
+            if let Some(on_statement) = &mut self.on_statement {
+                self.user_data = on_statement(node, self.user_data.clone()).1
+            }
         }
     }
 }

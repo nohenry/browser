@@ -3,8 +3,8 @@ setup {
         centered {
             direction: Vertical
             gap: 50
-            visible: false
-            color: rgb(1, 1, 2) 
+            visible: 
+            color: rgb(1, 2, 3)
         }
 
         box {
