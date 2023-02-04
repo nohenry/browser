@@ -1,17 +1,10 @@
-use proc_macro2::{Ident, TokenStream};
-use quote::{format_ident, quote, ToTokens};
+use quote::{format_ident, quote};
 use std::{
     collections::hash_map::DefaultHasher,
     fmt::Debug,
     hash::{Hash, Hasher},
-    iter::repeat,
 };
-use syn::{
-    parse::{Parse, ParseStream},
-    parse_macro_input,
-    punctuated::Punctuated,
-    DeriveInput, Expr, Fields, Token,
-};
+use syn::{parse_macro_input, DeriveInput, Fields};
 
 #[proc_macro_derive(EnumHash)]
 pub fn gen_hash(item: proc_macro::TokenStream) -> proc_macro::TokenStream {
@@ -94,35 +87,35 @@ pub fn extract(item: proc_macro::TokenStream) -> proc_macro::TokenStream {
     tokens.into()
 }
 
-#[derive(Debug)]
-struct ExtractEnum {
-    init: Expr,
-    enum_type: Ident,
-    enum_varient: Ident,
-}
+// #[derive(Debug)]
+// struct ExtractEnum {
+//     init: Expr,
+//     enum_type: Ident,
+//     enum_varient: Ident,
+// }
 
-impl Parse for ExtractEnum {
-    fn parse(input: ParseStream) -> syn::Result<Self> {
-        // let visibility: Visibility = input.parse()?;
-        // input.parse::<Token![static]>()?;
-        // input.parse::<Token![ref]>()?;
-        // let name: Ident = input.parse()?;
-        // input.parse::<Token![:]>()?;
-        // let ty: Type = input.parse()?;
-        // input.parse::<Token![=]>()?;
-        let init: Expr = input.parse()?;
-        input.parse::<Token![,]>()?;
-        let enum_type: Ident = input.parse()?;
-        input.parse::<Token![::]>()?;
-        let enum_varient: Ident = input.parse()?;
+// impl Parse for ExtractEnum {
+//     fn parse(input: ParseStream) -> syn::Result<Self> {
+//         // let visibility: Visibility = input.parse()?;
+//         // input.parse::<Token![static]>()?;
+//         // input.parse::<Token![ref]>()?;
+//         // let name: Ident = input.parse()?;
+//         // input.parse::<Token![:]>()?;
+//         // let ty: Type = input.parse()?;
+//         // input.parse::<Token![=]>()?;
+//         let init: Expr = input.parse()?;
+//         input.parse::<Token![,]>()?;
+//         let enum_type: Ident = input.parse()?;
+//         input.parse::<Token![::]>()?;
+//         let enum_varient: Ident = input.parse()?;
 
-        Ok(ExtractEnum {
-            init,
-            enum_type,
-            enum_varient,
-        })
-    }
-}
+//         Ok(ExtractEnum {
+//             init,
+//             enum_type,
+//             enum_varient,
+//         })
+//     }
+// }
 
 // #[proc_macro]
 // pub fn extract_enum(input: proc_macro::TokenStream) -> proc_macro::TokenStream {

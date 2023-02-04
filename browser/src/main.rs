@@ -1,15 +1,10 @@
 use std::{fs::File, io::BufReader};
 
-use neb_core::{
-    defaults,
-    dom_parser::parse_from_stream,
-    gfx::vello::{kurbo::Rect, peniko::Color},
-    psize,
-};
+use neb_core::dom_parser::parse_from_stream;
 
 fn main() {
     env_logger::init();
-    let file = File::open("text.smf").unwrap();
+    let file = File::open("test_files/new.smf").unwrap();
     let file = BufReader::new(file);
 
     let document = parse_from_stream(file);
@@ -23,13 +18,7 @@ fn main() {
     };
 
     pollster::block_on(neb_core::gfx::start_graphics_thread(move |builder| {
-        {
-            let body = document.get_body();
-            let body = body.borrow();
-
-            body.get_element()
-                .layout(&body, Rect::from_origin_size((0.0, 0.0), builder.size), 0, &document);
-        }
+        document.layout(builder.size.width, builder.size.height);
 
         document.draw(builder)
     }))

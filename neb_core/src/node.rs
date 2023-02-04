@@ -1,24 +1,26 @@
 use std::{
-    cell::Ref,
     collections::HashMap,
     fmt::Display,
     slice::Iter,
-    sync::{MutexGuard, RwLockReadGuard},
+    sync::{RwLockReadGuard},
 };
 
 use neb_graphics::{
     drawing_context::DrawingContext,
     simple_text,
     vello::{
-        kurbo::{Affine, Rect, RoundedRectRadii, Size, Vec2},
-        peniko::{Brush, Color, Fill, Stroke},
+        kurbo::{Affine, Rect, RoundedRectRadii, },
+        peniko::{Brush, Stroke},
     },
+};
+use neb_smf::{
+    ast::Value,
+    token::{SpannedToken, Token},
 };
 
 use crate::{
     rectr::RoundedRect,
-    styling::{self, Direction},
-    svg::{self, PicoSvg},
+    styling::{Direction},
     StyleValueAs,
 };
 
@@ -27,81 +29,41 @@ use crate::{
     dom_parser::Document,
     ids::{get_id_mgr, ID},
     psize,
-    styling::{Selector, StyleValue, UnitValue},
+    styling::{StyleValue, UnitValue},
 };
-use neb_util::{Rf, format::{TreeDisplay, NodeDisplay}};
+use neb_util::{
+    format::{NodeDisplay, TreeDisplay},
+    Rf,
+};
 
 /// The node type is a specific type of element
 /// The most common element is the `Div` which is for general use case
 #[derive(Clone)]
 #[repr(u8)]
 pub enum NodeType {
-    /// A general element type
-    Div = 0,
-
-    Span,
-
-    Head,
-
-    Body,
-
-    Html,
-
-    Style(String),
-
+    StyleBlock,
+    Setup,
+    View {
+        args: HashMap<String, Value>,
+    },
+    Style {
+        name: String,
+        properties: HashMap<String, Value>,
+    },
     Text(String),
-
-    Svg(PicoSvg),
-
-    G,
-
-    Path(String),
-
     Root,
 }
 
 impl NodeType {
-    pub fn try_node(element: &str) -> Option<NodeType> {
-        use NodeType::*;
-
-        match element.to_lowercase().as_str() {
-            "div" => Some(Div),
-            "span" => Some(Span),
-            "html" => Some(Html),
-            "head" => Some(Head),
-            "body" => Some(Body),
-            "style" => Some(Style(String::with_capacity(0))),
-            "g" => Some(G),
-            "path" => Some(Path(String::with_capacity(0))),
-            "svg" => Some(Svg(PicoSvg {
-                items: Vec::with_capacity(0),
-                view: Rect::ZERO,
-            })),
-            _ => None,
-        }
-    }
-
-    pub fn try_node_poss(element: Option<&str>) -> Option<NodeType> {
-        match element {
-            Some(node) => NodeType::try_node(node),
-            _ => None,
-        }
-    }
-
     pub fn as_str(&self) -> &str {
         use NodeType::*;
         match self {
-            Div => "div",
-            Span => "span",
-            Head => "head",
-            Body => "body",
-            Html => "html",
-            Style(_) => "style",
-            Svg(_) => "svg",
-            G => "g",
-            Path(_) => "path",
+            Setup => "setup",
+            StyleBlock => "style",
             Text(s) => s.as_str(),
+            View { .. } => "view",
             Root => "root",
+            Style { name, .. } => name.as_str(),
         }
     }
 }
@@ -166,17 +128,6 @@ impl Node {
         self
     }
 
-    pub fn remove_children(&mut self) {
-        let remove = match self.ty {
-            NodeType::Svg(_) => true,
-            _ => false,
-        };
-
-        if remove {
-            self.children.clear();
-        }
-    }
-
     pub fn add_child(&mut self, node: impl Into<Rf<Node>>) {
         self.children.push(node.into())
     }
@@ -225,25 +176,26 @@ impl Node {
     }
 
     pub fn styles(&self, document: &Document, key: &str) -> StyleValue {
-        let styles = document.get_styles();
+        // let symbol = symbol.borrow();
+        let class = match &self.ty {
+            NodeType::View { args } => args.get("class"),
+            _ => None,
+        };
+        let Some(styles) = document.get_styles() else {
+            return StyleValue::Empty
+        };
         let styles = styles.borrow();
-        let styles = styles.get(self.get_type().as_str());
-        if let Some(styles) = styles {
-            let styles = styles.borrow();
-            styles.get(key).cloned().unwrap_or_else(|| {
-                if self.parent.is_some() && styling::is_inherited(key) {
-                    self.bparent().styles(document, key)
-                } else {
-                    StyleValue::Empty
-                }
-            })
-        } else {
-            if self.parent.is_some() && styling::is_inherited(key) {
-                self.bparent().styles(document, key)
-            } else {
-                StyleValue::Empty
-            }
+        if let Some(Value::Ident(SpannedToken(_, Token::Ident(s)))) = class {
+            let Some(styles) = styles.children.get(s) else {
+                return StyleValue::Empty
+            };
+
+            let sym = styles.borrow();
+
+            return StyleValue::from_symbol(&sym, key);
         }
+
+        StyleValue::Empty
     }
 
     pub fn bparent(&self) -> RwLockReadGuard<'_, Node> {
@@ -253,7 +205,6 @@ impl Node {
 
 impl NodeDisplay for Node {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        // self.ty.fmt(f)
         write!(f, "{} - {}", self.ty, self.element.id)
     }
 }
@@ -263,12 +214,14 @@ impl TreeDisplay for Node {
         self.children.len()
     }
 
-    fn child_at(&self, index: usize) -> Option<&dyn TreeDisplay> {
-        if index < self.children.len() {
-            Some(&self.children[index])
-        } else {
-            None
-        }
+    fn child_at(&self, _index: usize) -> Option<&dyn TreeDisplay> {
+        None
+    }
+
+    fn child_at_bx<'a>(&'a self, index: usize) -> Box<dyn TreeDisplay + 'a> {
+        let p = self.children.iter().nth(index).unwrap().borrow();
+
+        Box::new(p)
     }
 }
 
@@ -277,14 +230,30 @@ impl TreeDisplay for Node {
 /// This struct containts layout; size information
 ///
 /// Nodes can contain element (or not)
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Element {
     id: ID,
 
     classes: Vec<String>,
 }
 
+impl std::fmt::Debug for Element {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Element")
+            .field("id", &self.id)
+            .field("classes", &self.classes)
+            .finish()
+    }
+}
+
 impl Element {
+    pub fn new() -> Self {
+        Element {
+            id: get_id_mgr().gen_insert_zero(),
+            classes: Vec::with_capacity(0),
+        }
+    }
+
     pub fn with_classes(mut self, classes: impl Into<Vec<String>>) -> Self {
         self.classes = classes.into();
         self
@@ -352,6 +321,7 @@ impl Element {
             // Layout each child and add it's requested size to the total area
             for child in node.children.iter() {
                 let node = child.borrow();
+                // dbg!(node.element.id);
 
                 // The bounds of the space that has not been taken up yet
                 let area = Rect::new(bounds.x0, bounds.y0 + rect.height(), bounds.x1, bounds.y1);
@@ -390,7 +360,7 @@ impl Element {
                 // The bounds of the space that has not been taken up yet
                 let area = Rect::new(bounds.x0, bounds.y0, bounds.x1, bounds.y1 - rect.height());
 
-                let area = node.element.layout(&node, area, depth + 1, document);
+                let area = self.layout(&node, area, depth + 1, document);
                 if fit {
                     if area.width() > rect.width() {
                         rect.x1 = rect.x0 + area.width();
@@ -425,7 +395,7 @@ impl Element {
                 // The bounds of the space that has not been taken up yet
                 let area = Rect::new(bounds.x0 + rect.width(), bounds.y0, bounds.x1, bounds.y1);
 
-                let area = node.element.layout(&node, area, depth + 1, document);
+                let area = self.layout(&node, area, depth + 1, document);
                 if fit {
                     if area.height() > rect.height() {
                         rect.y1 = rect.y0 + area.height();
@@ -460,7 +430,7 @@ impl Element {
                 // The bounds of the space that has not been taken up yet
                 let area = Rect::new(bounds.x0, bounds.y0, bounds.x1 - rect.width(), bounds.y1);
 
-                let area = node.element.layout(&node, area, depth + 1, document);
+                let area = self.layout(&node, area, depth + 1, document);
                 if fit {
                     if area.height() > rect.height() {
                         rect.y1 = rect.y0 + area.height();
@@ -474,19 +444,7 @@ impl Element {
         };
 
         let area = match &node.ty {
-            NodeType::Svg(svg) => {
-                println!("{:?} {}", svg.view, svg.view.width());
-                Rect::from_origin_size(
-                    (bounds.x0, bounds.y0),
-                    (svg.view.width(), svg.view.height()),
-                )
-            }
-            NodeType::Text(t) => {
-                let mut simple_text = simple_text::SimpleText::new();
-                let tl = simple_text.layout(None, psize!(defaults::TEXT_SIZE), t);
-                Rect::from_origin_size((bounds.x0, bounds.y0), (tl.width(), tl.height()))
-            }
-            NodeType::Div | NodeType::Span => {
+            NodeType::View { .. } => {
                 let gap = StyleValueAs!(node.styles(document, "gap"), Gap)
                     .unwrap_or(UnitValue::Pixels(defaults::GAP));
 
@@ -502,7 +460,20 @@ impl Element {
                     Direction::HorizontalReverse => layout_children_horizontally_rev(gap, fit),
                 }
             }
-            NodeType::Body => {
+            // SymbolKind::Node { args }
+            // NodeType::Svg(svg) => {
+            //     println!("{:?} {}", svg.view, svg.view.width());
+            //     Rect::from_origin_size(
+            //         (bounds.x0, bounds.y0),
+            //         (svg.view.width(), svg.view.height()),
+            //     )
+            // }
+            NodeType::Text(t) => {
+                let mut simple_text = simple_text::SimpleText::new();
+                let tl = simple_text.layout(None, psize!(defaults::TEXT_SIZE), t);
+                Rect::from_origin_size((bounds.x0, bounds.y0), (tl.width(), tl.height()))
+            }
+            NodeType::Root => {
                 let gap = StyleValueAs!(node.styles(document, "gap"), Gap)
                     .unwrap_or(UnitValue::Pixels(defaults::GAP));
 
@@ -574,7 +545,7 @@ impl Element {
         if let Some(color) = border_color {
             // If we have a radius, draw it instead
             if let Some(radius) = radius {
-                let rounded = RoundedRect::from_rect(layout.border_rect, radius);
+                let _rounded = RoundedRect::from_rect(layout.border_rect, radius);
                 // dctx.builder.fill(
                 //     neb_graphics::vello::peniko::Fill::NonZero,
                 //     Affine::IDENTITY,
@@ -666,51 +637,52 @@ impl Element {
             defaults::FOREGROUND_COLOR
         };
 
+        // let node = node.borrow();
+
         match &node.ty {
-            NodeType::Svg(svg) => {
-                for item in &svg.items {
-                    match item {
-                        svg::Item::Fill(fill) => {
-                            dctx.builder.fill(
-                                Fill::NonZero,
-                                Affine::IDENTITY,
-                                fill.color,
-                                None,
-                                &fill.path,
-                            );
-                        }
-                        svg::Item::Stroke(stroke) => {
-                            dctx.builder.stroke(
-                                &Stroke::new(stroke.width as f32),
-                                Affine::IDENTITY,
-                                stroke.color,
-                                None,
-                                &stroke.path,
-                            );
-                        }
-                        svg::Item::Path(path) => {
-                            dctx.builder.fill(
-                                neb_graphics::vello::peniko::Fill::NonZero,
-                                Affine::translate(Vec2::new(-svg.view.x0, -svg.view.y0))
-                                    * Affine::translate(Vec2::new(
-                                        layout.content_rect.x0,
-                                        layout.content_rect.y0,
-                                    )),
-                                &Brush::Solid(foreground_color),
-                                None,
-                                &path,
-                            );
-                        }
-                    }
-                }
-            }
+            // _ => ()
+            // NodeType::Svg(svg) => {
+            //     for item in &svg.items {
+            //         match item {
+            //             svg::Item::Fill(fill) => {
+            //                 dctx.builder.fill(
+            //                     Fill::NonZero,
+            //                     Affine::IDENTITY,
+            //                     fill.color,
+            //                     None,
+            //                     &fill.path,
+            //                 );
+            //             }
+            //             svg::Item::Stroke(stroke) => {
+            //                 dctx.builder.stroke(
+            //                     &Stroke::new(stroke.width as f32),
+            //                     Affine::IDENTITY,
+            //                     stroke.color,
+            //                     None,
+            //                     &stroke.path,
+            //                 );
+            //             }
+            //             svg::Item::Path(path) => {
+            //                 dctx.builder.fill(
+            //                     neb_graphics::vello::peniko::Fill::NonZero,
+            //                     Affine::translate(Vec2::new(-svg.view.x0, -svg.view.y0))
+            //                         * Affine::translate(Vec2::new(
+            //                             layout.content_rect.x0,
+            //                             layout.content_rect.y0,
+            //                         )),
+            //                     &Brush::Solid(foreground_color),
+            //                     None,
+            //                     &path,
+            //                 );
+            //             }
+            //         }
+            //     }
+            // }
             NodeType::Text(t) => {
                 dctx.text.add(
                     &mut dctx.builder,
                     None,
                     psize!(defaults::TEXT_SIZE),
-                    None,
-                    None,
                     Some(&Brush::Solid(foreground_color)),
                     Affine::translate((layout.content_rect.x0, layout.content_rect.y0)),
                     t,

@@ -10,6 +10,8 @@ impl Lexer {
         let mut line_num = 0;
         let mut position = 0;
 
+        let mut str_index: Option<(usize, usize)> = None;
+
         let mut tokens = Vec::new();
         while start_index < input.len() && end_index <= input.len() {
             let sub_str = &input[start_index..end_index];
@@ -19,8 +21,61 @@ impl Lexer {
                 match token {
                     Token::Whitespace => position += 1,
                     Token::Newline => {
+                        if let Some(indicies) = str_index {
+                            let st = &input[indicies.1..end_index-1];
+                            if verify_text(st) {
+                                tokens.truncate(indicies.0);
+
+                                let token = SpannedToken::new(
+                                    Token::Text(st.to_string()),
+                                    Span {
+                                        line_num,
+                                        position,
+                                        length: (end_index - start_index) as u32,
+                                        token_index: tokens.len() as u32,
+                                    },
+                                );
+
+                                tokens.push(token);
+                            }
+                        }
+
                         line_num += 1;
                         position = 0;
+
+                        str_index = None
+                    }
+                    Token::Ident(_) => {
+                        let token = SpannedToken::new(
+                            token,
+                            Span {
+                                line_num,
+                                position,
+                                length: (end_index - start_index) as u32,
+                                token_index: tokens.len() as u32,
+                            },
+                        );
+
+                        // str_index = tokens.len();
+                        println!(
+                            "Toke {:?} {}",
+                            token.1,
+                            tokens
+                                .last()
+                                .map(|c| c.0.line_num < token.0.line_num)
+                                .unwrap_or(false)
+                        );
+                        if str_index.is_none()
+                            && tokens
+                                .last()
+                                .map(|c| c.0.line_num < token.0.line_num)
+                                .unwrap_or(false)
+                        {
+                            str_index = Some((tokens.len(), start_index));
+                        }
+
+                        tokens.push(token);
+                        position += (end_index - start_index) as u32;
                     }
                     token => {
                         let token = SpannedToken::new(
@@ -80,14 +135,22 @@ impl Lexer {
             Some(t) => t,
         };
 
-        let cnt = input.chars().fold(0u8, |acc, c| if c == '.' { 1 + acc } else { acc });
-        if input.chars().find(|c| !(c.is_numeric() || *c == '.')).is_none() && cnt <= 1 && del {
+        let cnt = input
+            .chars()
+            .fold(0u8, |acc, c| if c == '.' { 1 + acc } else { acc });
+        if input
+            .chars()
+            .find(|c| !(c.is_numeric() || *c == '.'))
+            .is_none()
+            && cnt <= 1
+            && del
+        {
             if cnt == 1 {
                 let val = input.parse().unwrap_or(0.0f64);
-                return Some(Token::Float(val))
+                return Some(Token::Float(val));
             } else {
                 let val = input.parse().unwrap_or(0u64);
-                return Some(Token::Integer(val))
+                return Some(Token::Integer(val));
             }
         }
 
@@ -102,8 +165,20 @@ impl Lexer {
             return Some(Token::Ident(input.to_string()));
         }
 
+        if let Some('\n') = next {
+            return Some(Token::Text(input.to_string()));
+        }
+
         None
     }
+}
+
+fn verify_text(st: &str) -> bool {
+    let val = st.chars().find(|c| !(c.is_alphanumeric() || *c == ' '));
+
+    println!("Val: {:?}", val);
+
+    val.is_none()
 }
 
 // fn match_str_no_case(a: &str, b: &str) -> bool {

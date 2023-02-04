@@ -1,5 +1,7 @@
 #![feature(trait_upcasting)]
 
+use std::collections::HashMap;
+
 use ast::{Statement, StyleStatement, Value};
 use lexer::Lexer;
 use linked_hash_map::LinkedHashMap;
@@ -22,83 +24,142 @@ use error::ParseError;
 pub use pollster;
 use token::{SpannedToken, Token};
 
-pub async fn parse_str(input: String) -> (Module, Vec<ParseError>) {
-    let mut lexer = Lexer {};
-    let tokens = lexer.lex(&input);
+impl Module {
+    pub fn parse_str(input: &str) -> (Module, Vec<ParseError>) {
+        let mut lexer = Lexer {};
+        let tokens = lexer.lex(&input);
+        for tok in &tokens {
+            println!("{:?}", tok);
+        }
 
-    let parser = Parser::new(tokens);
-    let parsed = parser.parse().unwrap();
+        let parser = Parser::new(tokens);
+        let parsed = parser.parse().unwrap();
+        for p in &parsed {
+            println!("{}", p.format());
+        }
 
-    let er = parser.get_errors().clone();
+        let er = parser.get_errors().clone();
 
-    let mods = Symbol::new_root();
-    let mut md = ModuleDescender::new(mods.clone())
-        .with_on_statement(|st, ud| {
-            match st {
-                Statement::Element { token, .. } | Statement::Style { token, .. } => {
-                    let cd = if let Some(SpannedToken(_, Token::Ident(i))) = token {
-                        Symbol::insert(&ud, &i, SymbolKind::Node)
-                    } else {
-                        Symbol::insert(&ud, &"view", SymbolKind::Node)
-                    };
-                    return (cd, ud);
-                }
-                Statement::UseStatement { args, .. } => {
-                    let res: Option<Vec<String>> = args
-                        .iter_items()
-                        .map(|a| match a {
-                            SpannedToken(_, Token::Ident(i)) => Some(i.clone()),
-                            _ => None,
-                        })
-                        .collect();
-                    if let Some(res) = res {
-                        let cd = Symbol::insert(&ud, &"use", SymbolKind::Use(res));
+        let mods = Symbol::new_root();
+        let md = ModuleDescender::new(mods.clone())
+            .with_on_statement(|st, ud| {
+                match st {
+                    Statement::Element {
+                        token, arguments, ..
+                    } => {
+                        let args = if let Some(args) = arguments {
+                            let vals = args.iter_items().filter_map(|arg| {
+                                if let (Some(SpannedToken(_, Token::Ident(name))), Some(value)) =
+                                    (&arg.name, &arg.value)
+                                {
+                                    Some((name.clone(), value.clone()))
+                                } else {
+                                    None
+                                }
+                            });
+                            HashMap::from_iter(vals)
+                        } else {
+                            HashMap::new()
+                        };
+                        let cd = if let Some(SpannedToken(_, Token::Ident(i))) = token {
+                            Symbol::insert(&ud, &i, SymbolKind::Node { args })
+                        } else {
+                            Symbol::insert(&ud, &"view", SymbolKind::Node { args })
+                        };
                         return (cd, ud);
                     }
+                    Statement::Text(SpannedToken(_, Token::Text(i))) => {
+                        let cd = Symbol::insert_unnamed(&ud, SymbolKind::Text(i.clone()));
+                        if let Some(cd) = cd {
+                            return (cd, ud)
+                        } else {
+                            return (ud.clone(), ud)
+                        }
+                    }
+                    Statement::Style { token, .. } => {
+                        let cd = if let Some(SpannedToken(_, Token::Ident(i))) = token {
+                            Symbol::insert(
+                                &ud,
+                                &i,
+                                SymbolKind::Node {
+                                    args: HashMap::new(),
+                                },
+                            )
+                        } else {
+                            Symbol::insert(
+                                &ud,
+                                &"view",
+                                SymbolKind::Node {
+                                    args: HashMap::new(),
+                                },
+                            )
+                        };
+                        return (cd, ud);
+                    }
+                    Statement::UseStatement { args, .. } => {
+                        let res: Option<Vec<String>> = args
+                            .iter_items()
+                            .map(|a| match a {
+                                SpannedToken(_, Token::Ident(i)) => Some(i.clone()),
+                                _ => None,
+                            })
+                            .collect();
+                        if let Some(res) = res {
+                            let cd = Symbol::insert(&ud, &"use", SymbolKind::Use(res));
+                            return (cd, ud);
+                        }
+                    }
+                    _ => ()
                 }
-            }
-            (ud.clone(), ud)
-        })
-        .with_on_style_statement(move |st, ud| {
-            match st {
-                StyleStatement::Style {
-                    body: _,
-                    body_range: _,
-                    token: Some(SpannedToken(_, Token::Ident(i))),
-                } => {
-                    let cd = Symbol::insert(&ud, &i, SymbolKind::Style(st.clone()));
-                    return (cd, ud);
+                (ud.clone(), ud)
+            })
+            .with_on_style_statement(move |st, ud| {
+                match st {
+                    StyleStatement::Style {
+                        body: _,
+                        body_range: _,
+                        token: Some(SpannedToken(_, Token::Ident(i))),
+                    } => {
+                        let cd = Symbol::insert(
+                            &ud,
+                            &i,
+                            SymbolKind::Style {
+                                properties: HashMap::from_iter(st.style_elements()),
+                            },
+                        );
+                        return (cd, ud);
+                    }
+                    _ => (),
                 }
-                _ => (),
-            }
-            (ud.clone(), ud)
-        });
+                (ud.clone(), ud)
+            });
 
-    md.descend(&parsed);
+        md.descend(&parsed);
 
-    {
-        // let mods = mods.borrow_mut();
-        Symbol::insert(
-            &mods,
-            "rgb",
-            SymbolKind::Function {
-                args: vec![Type::Integer, Type::Integer, Type::Integer],
-                return_type: Type::Tuple(vec![Type::Integer, Type::Integer, Type::Integer]),
-                func: Box::new(|vals| Some(Value::Tuple(vals))),
+        {
+            // let mods = mods.borrow_mut();
+            Symbol::insert(
+                &mods,
+                "rgb",
+                SymbolKind::Function {
+                    args: vec![Type::Integer, Type::Integer, Type::Integer],
+                    return_type: Type::Tuple(vec![Type::Integer, Type::Integer, Type::Integer]),
+                    func: Box::new(|vals| Some(Value::Tuple(vals))),
+                },
+            );
+        }
+
+        println!("{}", mods.format());
+
+        (
+            Module {
+                content: input.to_string(),
+                stmts: parsed,
+                symbol_tree: mods,
             },
-        );
+            er,
+        )
     }
-
-    println!("{}", mods.format());
-
-    (
-        Module {
-            content: input.to_string(),
-            stmts: parsed,
-            symbol_tree: mods,
-        },
-        er,
-    )
 }
 
 pub fn set_logger(logger: Box<dyn Log>) -> Result<(), SetLoggerError> {
@@ -137,7 +198,7 @@ impl Module {
     ) -> Option<Rf<Symbol>> {
         let nodev = node.borrow();
         match nodev.kind {
-            SymbolKind::Style(_) if nodev.name == symbol => return Some(node.clone()),
+            SymbolKind::Style { .. } if nodev.name == symbol => return Some(node.clone()),
             SymbolKind::Use(_) => return None,
             _ => (),
         }
@@ -288,13 +349,18 @@ impl Type {
 }
 
 pub enum SymbolKind {
-    Node,
+    Text(String),
+    Node {
+        args: HashMap<String, Value>,
+    },
     Function {
         args: Vec<Type>,
         return_type: Type,
         func: Box<dyn Fn(Vec<Value>) -> Option<Value> + Send + Sync>,
     },
-    Style(StyleStatement),
+    Style {
+        properties: HashMap<String, Value>,
+    },
     Use(Vec<String>),
     Root,
 }
@@ -311,8 +377,10 @@ impl NodeDisplay for Symbol {
         match &self.kind {
             SymbolKind::Root => f.write_str("Root"),
             SymbolKind::Function { .. } => write!(f, "Function `{}`", self.name),
-            SymbolKind::Node => write!(f, "Node `{}`", self.name),
-            SymbolKind::Style(_) => write!(f, "Style `{}`", self.name),
+            SymbolKind::Text(s) => write!(f, "Text `{}`", s),
+            // SymbolKind::StyleNode { .. } => write!(f, "Style Node `{}`", self.name),
+            SymbolKind::Node { .. } => write!(f, "Node `{}`", self.name),
+            SymbolKind::Style { .. } => write!(f, "Style `{}`", self.name),
             SymbolKind::Use(_) => write!(f, "Use"),
         }
     }
@@ -323,10 +391,14 @@ impl TreeDisplay for Symbol {
         self.children.len()
     }
 
-    fn child_at(&self, index: usize) -> Option<&dyn TreeDisplay> {
-        let p = self.children.values().nth(index).unwrap(); //.map(|f| &*f.borrow())
+    fn child_at(&self, _index: usize) -> Option<&dyn TreeDisplay> {
+        None
+    }
 
-        Some(p)
+    fn child_at_bx<'a>(&'a self, index: usize) -> Box<dyn TreeDisplay + 'a> {
+        let p = self.children.values().nth(index).unwrap().borrow(); //.map(|f| &*f.borrow())
+
+        Box::new(p)
     }
 }
 
@@ -338,6 +410,39 @@ impl Symbol {
             parent: None,
             children: LinkedHashMap::new(),
         })
+    }
+
+    pub fn insert_unnamed(symb: &Rf<Symbol>, kind: SymbolKind) -> Option<Rf<Symbol>> {
+        let insert_index = {
+            let symb = symb.borrow();
+
+            // Find free index; max 128
+            [0; 128].into_iter().enumerate().map(|(i, _)| i).find_map(|v| {
+                let val = format!("{}", v);
+                if symb.children.get(&val).is_none() {
+                    Some(val)
+                } else {
+                    None
+                }
+            })
+        };
+
+        if let Some(insert_index) = insert_index {
+            let new = Rf::new(Symbol {
+                name: "text".into(),
+                kind,
+                parent: Some(symb.clone()),
+                children: LinkedHashMap::new(),
+            });
+
+        symb.borrow_mut()
+            .children
+            .insert(insert_index, new.clone());
+
+            Some(new)
+        } else {
+            None
+        }
     }
 
     pub fn insert(symb: &Rf<Symbol>, name: &str, kind: SymbolKind) -> Rf<Symbol> {
@@ -460,6 +565,7 @@ impl<U: Clone> ModuleDescender<U> {
             Statement::Element { body, .. } => body.iter().for_each(|s| self.descend_statement(s)),
             Statement::Style { body, .. } => self.descend_style_statements(body),
             Statement::UseStatement { .. } => (),
+            Statement::Text(_) => (),
         }
         if let Some(sets) = sets {
             self.user_data = sets;
@@ -596,6 +702,7 @@ impl<U: Clone> MutModuleDescender<U> {
                 }
                 Statement::Style { body, .. } => self.descend_style_statements(body),
                 Statement::UseStatement { .. } => (),
+                Statement::Text(_) => (),
             }
             if let Some(sets) = sets {
                 self.user_data = sets;
@@ -607,6 +714,7 @@ impl<U: Clone> MutModuleDescender<U> {
                 }
                 Statement::Style { body, .. } => self.descend_style_statements(body),
                 Statement::UseStatement { .. } => (),
+                Statement::Text(_) => (),
             }
             if let Some(on_statement) = &mut self.on_statement {
                 self.user_data = on_statement(node, self.user_data.clone()).1

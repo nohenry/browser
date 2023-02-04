@@ -53,6 +53,13 @@ impl Parser {
                 }
             }
             Some(Token::Ident(_)) => self.tokens.next(),
+            Some(Token::Text(_)) => {
+                let Some(tok) = self.tokens.next() else {
+                    return None;
+                };
+
+                return Some(Statement::Text(tok.clone()));
+            }
             _ => None,
         };
 
@@ -64,11 +71,9 @@ impl Parser {
 
     pub fn parse_use(&self) -> Option<Statement> {
         let token = self.tokens.next();
-        println!("USEEEEEE");
         let mut args = PunctuationList::new();
         let mut last_line = token.map(|l| l.span().line_num);
         while let Some(Token::Ident(_)) = self.tokens.peek() {
-            println!("Ident use");
             let tok = self.tokens.next();
 
             match (self.tokens.peek(), tok) {
@@ -85,7 +90,7 @@ impl Parser {
                     }
                     break;
                 }
-                _ => break
+                _ => break,
             }
         }
         Some(Statement::UseStatement {

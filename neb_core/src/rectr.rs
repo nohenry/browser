@@ -2,7 +2,7 @@ use std::f64::consts::{FRAC_PI_2, FRAC_PI_4};
 use std::ops::{Add, Sub};
 
 use neb_graphics::vello::kurbo::{
-    Arc, ArcAppendIter, PathEl, Point, Rect, RoundedRectRadii, Shape, Size, Vec2,
+    Arc, ArcAppendIter, PathEl, Point, Rect, RoundedRectRadii, Shape, Vec2,
 };
 
 /// A rectangle with equally rounded corners.

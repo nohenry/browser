@@ -354,7 +354,7 @@ impl Backend {
                 }
 
                 module.iter_symbol(args.iter_items(), |name, val| match val.borrow().kind {
-                    SymbolKind::Style(_) => builder.push(
+                    SymbolKind::Style { .. } => builder.push(
                         name.span().line_num,
                         name.span().position,
                         name.span().length,
@@ -372,6 +372,15 @@ impl Backend {
                     }
                 });
             }
+            Statement::Text(txt) => {
+                builder.push(
+                    txt.span().line_num,
+                    txt.span().position,
+                    txt.span().length,
+                    get_stype_index_from_str("string"),
+                    0,
+                );
+            } // Statement::
         }
     }
 
@@ -565,12 +574,12 @@ impl Backend {
                         let mut comp = Vec::new();
                         for (name, sym) in &sym.borrow().children {
                             match &sym.borrow().kind {
-                                SymbolKind::Node => comp.push(CompletionItem {
+                                SymbolKind::Node { .. } => comp.push(CompletionItem {
                                     label: name.clone(),
                                     kind: Some(CompletionItemKind::MODULE),
                                     ..Default::default()
                                 }),
-                                SymbolKind::Style(_) => comp.push(CompletionItem {
+                                SymbolKind::Style { .. } => comp.push(CompletionItem {
                                     label: name.clone(),
                                     kind: Some(CompletionItemKind::STRUCT),
                                     ..Default::default()
@@ -582,6 +591,7 @@ impl Backend {
                     }
                 }
             }
+            Statement::Text(_) => {}
         }
         None
     }
@@ -868,7 +878,7 @@ impl LanguageServer for Backend {
     }
 
     async fn did_open(&self, params: DidOpenTextDocumentParams) {
-        let out = neb_smf::parse_str(params.text_document.text).await;
+        let out = neb_smf::Module::parse_str(&params.text_document.text);
         println!("tree {}", out.0.format());
 
         for err in out.1 {
@@ -923,7 +933,7 @@ impl LanguageServer for Backend {
             } else {
                 let text = change.text;
 
-                let out = neb_smf::parse_str(text).await;
+                let out = neb_smf::Module::parse_str(&text);
                 println!("{}", out.0.format());
 
                 for err in out.1 {

@@ -1,5 +1,5 @@
 use vello::glyph::{pinot, pinot::TableProvider, GlyphContext};
-use vello::kurbo::{Affine, Rect, Size};
+use vello::kurbo::{Affine, Rect};
 use vello::{peniko::Brush, SceneBuilder};
 
 pub use pinot::FontRef;
@@ -96,8 +96,8 @@ impl SimpleText {
         builder: &mut SceneBuilder,
         _font: Option<&FontRef>,
         size: f32,
-        vertical_align: Option<TextAlign>,
-        horizontal_align: Option<TextAlign>,
+        // vertical_align: Option<TextAlign>,
+        // horizontal_align: Option<TextAlign>,
         brush: Option<&Brush>,
         transform: Affine,
         text: &str,
@@ -109,12 +109,12 @@ impl SimpleText {
 
         if let Some(cmap) = font.cmap() {
             if let Some(hmtx) = font.hmtx() {
-                let f = font.os2().unwrap();
-                let layout = self.layout(_font, size, text);
-                let (ascent, descent, _gap) = self.get_adg(_font, size);
+                // let f = font.os2().unwrap();
+                // let layout = self.layout(_font, size, text);
+                // let (ascent, descent, _gap) = self.get_adg(_font, size);
 
-                let valign = vertical_align.unwrap_or(TextAlign::Top);
-                let halign = horizontal_align.unwrap_or(TextAlign::Top);
+                // let valign = vertical_align.unwrap_or(TextAlign::Top);
+                // let halign = horizontal_align.unwrap_or(TextAlign::Top);
 
                 let upem = font.head().map(|head| head.units_per_em()).unwrap_or(1000) as f64;
                 let scale = size as f64 / upem;

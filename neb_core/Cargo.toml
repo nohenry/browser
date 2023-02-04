@@ -16,6 +16,7 @@ neb_errors = { path = "../neb_errors" }
 neb_graphics = { path = "../neb_graphics" }
 neb_macros = { path = "../neb_macros" }
 neb_util = { path = "../neb_util" }
+neb_smf = { path = "../neb_smf" }
 
 roxmltree = "*"
 nom = "7.1.1"

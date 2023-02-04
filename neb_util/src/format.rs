@@ -1,4 +1,8 @@
-use std::{cell::{Ref, RefCell}, fmt, sync::{Mutex, MutexGuard, RwLockReadGuard}};
+use std::{
+    cell::{Ref, RefCell},
+    fmt,
+    sync::{Mutex, MutexGuard, RwLockReadGuard},
+};
 
 use crate::Rf;
 
@@ -235,6 +239,10 @@ where
     fn child_at(&self, index: usize) -> Option<&dyn TreeDisplay> {
         <T as TreeDisplay>::child_at(&self, index)
     }
+
+    fn child_at_bx<'a>(&'a self, index: usize) -> Box<dyn TreeDisplay + 'a> {
+        <T as TreeDisplay>::child_at_bx(&self, index)
+    }
 }
 
 impl<T> NodeDisplay for RefCell<T>
@@ -254,5 +262,3 @@ where
         <T as NodeDisplay>::fmt(&self.lock().unwrap(), f)
     }
 }
-
-

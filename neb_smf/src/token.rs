@@ -36,6 +36,7 @@ pub enum Keyword {
 #[derive(Debug, Clone)]
 pub enum Token {
     Ident(String),
+    Text(String),
     Integer(u64),
     Float(f64),
     Operator(Operator),
@@ -49,6 +50,7 @@ impl NodeDisplay for Token {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Ident(s) => f.write_str(s),
+            Self::Text(s) => f.write_str(s),
             Self::Operator(o) => f.write_str(o.as_str()),
             Self::Integer(i) => write!(f, "{}", i),
             Self::Float(fl) => write!(f, "{}", fl),

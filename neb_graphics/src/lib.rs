@@ -1,7 +1,9 @@
 use drawing_context::DrawingContext;
+use simple_text::SimpleText;
+use vello::kurbo::{Affine, Rect};
+use vello::peniko::{Brush, Color, Fill};
 use vello::{kurbo::Size, Scene, SceneBuilder};
 use vello::{util::RenderContext, Renderer, Result};
-use simple_text::SimpleText;
 use winit::{
     dpi::LogicalSize,
     event::{Event, WindowEvent},
@@ -26,8 +28,10 @@ pub async fn start_graphics_thread(draw: impl Fn(&mut DrawingContext) + 'static)
 
     let mut render_cx = RenderContext::new()?;
     let size = window.inner_size();
-    let mut surface = render_cx.create_surface(&window, size.width, size.height).await;
-    let mut device_handle = &render_cx.devices[surface.dev_id];
+    let mut surface = render_cx
+        .create_surface(&window, size.width, size.height)
+        .await;
+    let device_handle = &render_cx.devices[surface.dev_id];
     let mut renderer = Renderer::new(&device_handle.device)?;
 
     // let mut simple_text = simple_text::SimpleText::new();
@@ -53,7 +57,7 @@ pub async fn start_graphics_thread(draw: impl Fn(&mut DrawingContext) + 'static)
             let width = surface.config.width;
             let height = surface.config.height;
 
-            let mut device_handle = &render_cx.devices[surface.dev_id];
+            let device_handle = &render_cx.devices[surface.dev_id];
 
             let mut dctx = DrawingContext {
                 builder: SceneBuilder::for_scene(&mut scene),
@@ -61,6 +65,20 @@ pub async fn start_graphics_thread(draw: impl Fn(&mut DrawingContext) + 'static)
                 size: Size::new(width as _, height as _),
             };
 
+            dctx.builder.fill(
+                Fill::NonZero,
+                Affine::IDENTITY,
+                &Brush::Solid(Color::AQUA),
+                None,
+                &Rect {
+                    x0: 0.0,
+                    y0: 0.0,
+                    x1: width as _,
+                    y1: height as _,
+                },
+            );
+
+            // Call draw callback
             draw(&mut dctx);
 
             dctx.builder.finish();
@@ -80,7 +98,7 @@ pub async fn start_graphics_thread(draw: impl Fn(&mut DrawingContext) + 'static)
                 .expect("failed to render to surface");
             surface_texture.present();
             // render_cx.device.poll(wgpu::Maintain::Wait);
-            device_handle.device.poll(wgpu::MaintainBase::Wait);
+            device_handle.device.poll(wgpu::Maintain::Wait);
         }
         _ => {}
     });

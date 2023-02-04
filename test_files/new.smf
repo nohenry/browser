@@ -1,23 +1,14 @@
 setup {
     style {
         centered {
-            direction: Vertical
-            gap: 50
-            visible: 
-            color: rgb(1, 2, 3)
-        }
-
-        box {
-
+            backgroundColor: rgb(1, 2, 3)
         }
     }
 }
 
 use setup.style.centered
 
-
-
 view (class: centered) {
-    
+    This is some test text
 
 }

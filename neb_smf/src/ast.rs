@@ -152,6 +152,10 @@ impl ElementArgs {
     pub fn iter_items(&self) -> impl Iterator<Item = &Arg> + '_ {
         self.items.iter_items()
     }
+
+    pub fn iter_values(&self) -> impl Iterator<Item = &Value> + '_ {
+        self.items.iter_items().filter_map(|a| a.value.as_ref())
+    }
 }
 
 impl NodeDisplay for ElementArgs {
@@ -271,6 +275,18 @@ pub enum Value {
     Tuple(Vec<Value>),
 }
 
+impl Value {
+    pub fn as_function(&self) -> Option<(&str, &ElementArgs)> {
+        match self {
+            Value::Function {
+                ident: Some(SpannedToken(_, Token::Ident(i))),
+                args,
+            } => return Some((i, args)),
+            _ => None,
+        }
+    }
+}
+
 impl AstNode for Value {
     fn get_range(&self) -> Range {
         match self {
@@ -340,6 +356,24 @@ pub enum StyleStatement {
         body_range: Option<Range>,
         token: Option<SpannedToken>,
     },
+}
+
+impl StyleStatement {
+    pub fn style_elements(&self) -> impl Iterator<Item = (String, Value)> + '_ {
+        let cls = |stmt: &StyleStatement| match stmt {
+            StyleStatement::StyleElement {
+                key: Some(SpannedToken(_, Token::Ident(key))),
+                value: Some(value),
+                ..
+            } => Some((key.clone(), value.clone())),
+            _ => None,
+        };
+
+        match self {
+            StyleStatement::Style { body, .. } => body.iter().filter_map(cls),
+            _ => [].iter().filter_map(cls),
+        }
+    }
 }
 
 impl AstNode for StyleStatement {
@@ -427,6 +461,7 @@ pub enum Statement {
         body_range: Option<Range>,
         token: Option<SpannedToken>,
     },
+    Text(SpannedToken)
 }
 
 impl AstNode for Statement {
@@ -495,6 +530,7 @@ impl TreeDisplay for Statement {
                 body,
             } => addup!(body_range, token) + body.len(),
             Self::UseStatement { token, args } => addup!(token) + args.num_children(), // Self::Expression(_) => 1,
+            Self::Text(_) => 0,
         }
     }
 
@@ -523,6 +559,7 @@ impl TreeDisplay for Statement {
                 let ind = switchon!(index, token);
                 args.child_at(index - ind)
             }
+            Self::Text(_) => None
         }
     }
 

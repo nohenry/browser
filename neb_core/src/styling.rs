@@ -1,35 +1,11 @@
-use std::collections::hash_map::Values;
 use std::collections::HashSet;
 use std::fmt::{Debug, Display};
-use std::hash::Hash;
-use std::{
-    collections::{hash_map::DefaultHasher, HashMap},
-    hash::Hasher,
-};
 
 use neb_graphics::vello::kurbo::{Rect, RoundedRectRadii};
 use neb_graphics::vello::peniko::Color;
-use neb_macros::{EnumExtract, EnumHash};
-use nom::branch::alt;
-use nom::bytes::streaming::take_while;
-use nom::character::complete::{hex_digit1, one_of};
-use nom::character::streaming::digit1;
-use nom::combinator::map_res;
-use nom::error::ParseError;
-use nom::multi::count;
-use nom::number::streaming::recognize_float;
-use nom::sequence::{pair, preceded, terminated};
-use nom::{
-    bytes::complete::tag,
-    character::complete::alpha1,
-    combinator::map,
-    multi::{many0, separated_list0, separated_list1},
-    sequence::{delimited, separated_pair},
-    IResult,
-};
-use nom::{AsChar, FindToken, InputTakeAtPosition};
-
-use neb_util::Rf;
+use neb_macros::EnumHash;
+use neb_smf::ast::Value;
+use neb_smf::{Symbol, SymbolKind};
 
 #[derive(Debug, Clone, Copy)]
 pub enum Direction {
@@ -63,6 +39,46 @@ pub enum StyleValue {
     Direction { direction: Direction },
 
     Empty,
+}
+
+pub fn color_from_iter<'a>(mut iter: impl Iterator<Item = &'a Value>) -> Option<Color> {
+    let r = iter.next()?;
+    let g = iter.next()?;
+    let b = iter.next()?;
+    match (r, g, b) {
+        (Value::Integer(r, _), Value::Integer(g, _), Value::Integer(b, _)) => Some(Color {
+            r: *r as _,
+            g: *g as _,
+            b: *b as _,
+            a: 255,
+        }),
+        _ => None,
+    }
+}
+
+impl StyleValue {
+    pub fn from_symbol(sym: &Symbol, prop_key: &str) -> StyleValue {
+        match &sym.kind {
+            SymbolKind::Style { properties } => {
+                if let Some(prop) = properties.get(prop_key) {
+                    let func = prop.as_function();
+                    match (prop_key, func) {
+                        (
+                            "backgroundColor" | "foregroundColor" | "borderColor",
+                            Some(("rgb", args)),
+                        ) => {
+                            if let Some(color) = color_from_iter(args.iter_values()) {
+                                return StyleValue::BackgroundColor { color };
+                            }
+                        }
+                        _ => (),
+                    }
+                }
+            }
+            _ => (),
+        }
+        StyleValue::Empty
+    }
 }
 
 #[macro_export]
@@ -125,6 +141,72 @@ macro_rules! StyleValueAs {
   };
 }
 
+#[derive(Clone, Copy)]
+pub enum UnitValue {
+    Pixels(f64),
+}
+
+impl Default for UnitValue {
+    fn default() -> Self {
+        UnitValue::Pixels(0.0)
+    }
+}
+
+impl Debug for UnitValue {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self)
+    }
+}
+
+impl Display for UnitValue {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            UnitValue::Pixels(u) => write!(f, "{}px", u),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct UnitRect {
+    x0: UnitValue,
+    y0: UnitValue,
+    x1: UnitValue,
+    y1: UnitValue,
+}
+
+impl UnitRect {
+    pub fn new(x0: UnitValue, y0: UnitValue, x1: UnitValue, y1: UnitValue) -> UnitRect {
+        UnitRect { x0, y0, x1, y1 }
+    }
+}
+
+impl TryInto<Rect> for UnitRect {
+    type Error = ();
+
+    fn try_into(self) -> Result<Rect, Self::Error> {
+        use UnitValue::*;
+        match (self.x0, self.y0, self.x1, self.y1) {
+            (Pixels(x0), Pixels(y0), Pixels(x1), Pixels(y1)) => Ok(Rect::new(x0, y0, x1, y1)),
+            _ => Err(()),
+        }
+    }
+}
+
+impl TryInto<RoundedRectRadii> for UnitRect {
+    type Error = ();
+
+    fn try_into(self) -> Result<RoundedRectRadii, Self::Error> {
+        use UnitValue::*;
+        match (self.x0, self.y0, self.x1, self.y1) {
+            (Pixels(x0), Pixels(y0), Pixels(x1), Pixels(y1)) => {
+                Ok(RoundedRectRadii::new(x0, y0, x1, y1))
+            }
+            _ => Err(()),
+        }
+    }
+}
+
+/*
 #[derive(Debug)]
 pub struct Selector {
     // element: Cow<'a, str>,
@@ -347,70 +429,7 @@ pub fn parse_rect(bytes: &[u8]) -> IResult<&[u8], UnitRect> {
     )(bytes)
 }
 
-#[derive(Clone, Copy)]
-pub enum UnitValue {
-    Pixels(f64),
-}
 
-impl Default for UnitValue {
-    fn default() -> Self {
-        UnitValue::Pixels(0.0)
-    }
-}
-
-impl Debug for UnitValue {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self)
-    }
-}
-
-impl Display for UnitValue {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            UnitValue::Pixels(u) => write!(f, "{}px", u),
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, Default)]
-pub struct UnitRect {
-    x0: UnitValue,
-    y0: UnitValue,
-    x1: UnitValue,
-    y1: UnitValue,
-}
-
-impl UnitRect {
-    pub fn new(x0: UnitValue, y0: UnitValue, x1: UnitValue, y1: UnitValue) -> UnitRect {
-        UnitRect { x0, y0, x1, y1 }
-    }
-}
-
-impl TryInto<Rect> for UnitRect {
-    type Error = ();
-
-    fn try_into(self) -> Result<Rect, Self::Error> {
-        use UnitValue::*;
-        match (self.x0, self.y0, self.x1, self.y1) {
-            (Pixels(x0), Pixels(y0), Pixels(x1), Pixels(y1)) => Ok(Rect::new(x0, y0, x1, y1)),
-            _ => Err(()),
-        }
-    }
-}
-
-impl TryInto<RoundedRectRadii> for UnitRect {
-    type Error = ();
-
-    fn try_into(self) -> Result<RoundedRectRadii, Self::Error> {
-        use UnitValue::*;
-        match (self.x0, self.y0, self.x1, self.y1) {
-            (Pixels(x0), Pixels(y0), Pixels(x1), Pixels(y1)) => {
-                Ok(RoundedRectRadii::new(x0, y0, x1, y1))
-            }
-            _ => Err(()),
-        }
-    }
-}
 
 pub fn parse_units_values(bytes: &[u8]) -> IResult<&[u8], UnitValue> {
     map(terminated(recognize_float, tag("px")), |val| {
@@ -496,3 +515,4 @@ where
         nom::Parser::parse(&mut wsl(), input).map(|(i, _)| (i, o1))
     }
 }
+ */
