@@ -52,10 +52,12 @@ impl Parser {
 
     pub fn parse_value(&self) -> Option<Value> {
         match self.tokens.peek() {
-            Some(Token::Integer(i)) => {
-                Some(Value::Integer(*i, self.tokens.next().cloned().unwrap()))
+            Some(Token::Integer(i, u)) => {
+                Some(Value::Integer(*i, *u, self.tokens.next().cloned().unwrap()))
             }
-            Some(Token::Float(i)) => Some(Value::Float(*i, self.tokens.next().cloned().unwrap())),
+            Some(Token::Float(i, u)) => {
+                Some(Value::Float(*i, *u, self.tokens.next().cloned().unwrap()))
+            }
             Some(Token::Ident(_)) => {
                 let ident = self.tokens.next().unwrap();
 

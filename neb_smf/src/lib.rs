@@ -62,18 +62,25 @@ impl Module {
                             HashMap::new()
                         };
                         let cd = if let Some(SpannedToken(_, Token::Ident(i))) = token {
-                            Symbol::insert(&ud, &i, SymbolKind::Node { args })
+                            match i.as_str() {
+                                "setup" | "style" => {
+                                    Some(Symbol::insert(&ud, i, SymbolKind::Node { args }))
+                                }
+                                _ => Symbol::insert_unnamed(&ud, i, SymbolKind::Node { args }),
+                            }
                         } else {
-                            Symbol::insert(&ud, &"view", SymbolKind::Node { args })
+                            Symbol::insert_unnamed(&ud, "view", SymbolKind::Node { args })
                         };
-                        return (cd, ud);
+                        if let Some(cd) = cd {
+                            return (cd, ud);
+                        }
                     }
                     Statement::Text(SpannedToken(_, Token::Text(i))) => {
-                        let cd = Symbol::insert_unnamed(&ud, SymbolKind::Text(i.clone()));
+                        let cd = Symbol::insert_unnamed(&ud, "text", SymbolKind::Text(i.clone()));
                         if let Some(cd) = cd {
-                            return (cd, ud)
+                            return (cd, ud);
                         } else {
-                            return (ud.clone(), ud)
+                            return (ud.clone(), ud);
                         }
                     }
                     Statement::Style { token, .. } => {
@@ -109,7 +116,7 @@ impl Module {
                             return (cd, ud);
                         }
                     }
-                    _ => ()
+                    _ => (),
                 }
                 (ud.clone(), ud)
             })
@@ -149,7 +156,7 @@ impl Module {
             );
         }
 
-        println!("{}", mods.format());
+        println!("Mods {}", mods.format());
 
         (
             Module {
@@ -341,8 +348,8 @@ pub enum Type {
 impl Type {
     pub fn value_is_type(&self, value: &Value) -> bool {
         match (self, value) {
-            (Type::Float, Value::Float(_, _)) => true,
-            (Type::Integer, Value::Integer(_, _)) => true,
+            (Type::Float, Value::Float(_, _, _)) => true,
+            (Type::Integer, Value::Integer(_, _, _)) => true,
             _ => false,
         }
     }
@@ -378,7 +385,6 @@ impl NodeDisplay for Symbol {
             SymbolKind::Root => f.write_str("Root"),
             SymbolKind::Function { .. } => write!(f, "Function `{}`", self.name),
             SymbolKind::Text(s) => write!(f, "Text `{}`", s),
-            // SymbolKind::StyleNode { .. } => write!(f, "Style Node `{}`", self.name),
             SymbolKind::Node { .. } => write!(f, "Node `{}`", self.name),
             SymbolKind::Style { .. } => write!(f, "Style `{}`", self.name),
             SymbolKind::Use(_) => write!(f, "Use"),
@@ -412,32 +418,34 @@ impl Symbol {
         })
     }
 
-    pub fn insert_unnamed(symb: &Rf<Symbol>, kind: SymbolKind) -> Option<Rf<Symbol>> {
+    pub fn insert_unnamed(symb: &Rf<Symbol>, name: &str, kind: SymbolKind) -> Option<Rf<Symbol>> {
         let insert_index = {
             let symb = symb.borrow();
 
             // Find free index; max 128
-            [0; 128].into_iter().enumerate().map(|(i, _)| i).find_map(|v| {
-                let val = format!("{}", v);
-                if symb.children.get(&val).is_none() {
-                    Some(val)
-                } else {
-                    None
-                }
-            })
+            [0; 128]
+                .into_iter()
+                .enumerate()
+                .map(|(i, _)| i)
+                .find_map(|v| {
+                    let val = format!("{}", v);
+                    if symb.children.get(&val).is_none() {
+                        Some(val)
+                    } else {
+                        None
+                    }
+                })
         };
 
         if let Some(insert_index) = insert_index {
             let new = Rf::new(Symbol {
-                name: "text".into(),
+                name: name.into(),
                 kind,
                 parent: Some(symb.clone()),
                 children: LinkedHashMap::new(),
             });
 
-        symb.borrow_mut()
-            .children
-            .insert(insert_index, new.clone());
+            symb.borrow_mut().children.insert(insert_index, new.clone());
 
             Some(new)
         } else {

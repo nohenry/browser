@@ -1,15 +1,10 @@
-use std::{
-    collections::HashMap,
-    fmt::Display,
-    slice::Iter,
-    sync::{RwLockReadGuard},
-};
+use std::{collections::HashMap, fmt::Display, slice::Iter, sync::RwLockReadGuard};
 
 use neb_graphics::{
     drawing_context::DrawingContext,
     simple_text,
     vello::{
-        kurbo::{Affine, Rect, RoundedRectRadii, },
+        kurbo::{Affine, Rect, RoundedRectRadii},
         peniko::{Brush, Stroke},
     },
 };
@@ -18,15 +13,11 @@ use neb_smf::{
     token::{SpannedToken, Token},
 };
 
-use crate::{
-    rectr::RoundedRect,
-    styling::{Direction},
-    StyleValueAs,
-};
+use crate::{rectr::RoundedRect, styling::Direction, StyleValueAs};
 
 use crate::{
     defaults,
-    dom_parser::Document,
+    document::Document,
     ids::{get_id_mgr, ID},
     psize,
     styling::{StyleValue, UnitValue},
@@ -41,6 +32,7 @@ use neb_util::{
 #[derive(Clone)]
 #[repr(u8)]
 pub enum NodeType {
+    Use(Vec<String>),
     StyleBlock,
     Setup,
     View {
@@ -58,6 +50,7 @@ impl NodeType {
     pub fn as_str(&self) -> &str {
         use NodeType::*;
         match self {
+            Use(_) => "use",
             Setup => "setup",
             StyleBlock => "style",
             Text(s) => s.as_str(),
@@ -91,10 +84,10 @@ pub struct Node {
     pub ty: NodeType,
 
     /// A child might have children that need to be stored
-    children: Vec<Rf<Node>>,
+    pub children: Vec<Rf<Node>>,
 
     /// An optional element for displaying
-    element: Element,
+    pub element: Element,
 
     parent: Option<Rf<Node>>,
 }
@@ -175,22 +168,68 @@ impl Node {
         self.parent.as_ref().expect("Expected parent!").clone()
     }
 
+    fn symbol_in_scope(&self, document: &Document, name: &str) -> Option<Rf<Node>> {
+        let sty = self.children.iter().find_map(|f| {
+            let node = f.borrow();
+            match &node.ty {
+                NodeType::Use(p) => {
+                    if let Some(nd) = document.resolve_path(&document.get_body().borrow(), p.iter())
+                    {
+                        let b = {
+                            let n = nd.borrow();
+                            if n.ty.as_str() == name {
+                                true
+                            } else {
+                                return n.symbol_in_scope(document, name);
+                            }
+                        };
+                        if b {
+                            return Some(nd);
+                        }
+                    }
+                    None
+                }
+                _ => {
+                    if node.ty.as_str() == name {
+                        return Some(f.clone());
+                    } else {
+                        None
+                    }
+                }
+            }
+        });
+
+        if sty.is_none() {
+            if let Some(prent) = &self.parent {
+                let p = prent.borrow();
+                p.symbol_in_scope(document, name)
+            } else {
+                return None;
+            }
+        } else {
+            return sty;
+        }
+    }
+
     pub fn styles(&self, document: &Document, key: &str) -> StyleValue {
         // let symbol = symbol.borrow();
         let class = match &self.ty {
             NodeType::View { args } => args.get("class"),
             _ => None,
         };
-        let Some(styles) = document.get_styles() else {
-            return StyleValue::Empty
-        };
-        let styles = styles.borrow();
+        // let Some(styles) = document.get_styles() else {
+        //     return StyleValue::Empty
+        // };
+        // let styles = styles.borrow();
         if let Some(Value::Ident(SpannedToken(_, Token::Ident(s)))) = class {
-            let Some(styles) = styles.children.get(s) else {
+            let parent = self.parent.as_ref().unwrap().borrow();
+            let Some(symbol) = parent.symbol_in_scope(document, s) else {
                 return StyleValue::Empty
             };
+            // let Some(styles) = styles.children.get(s) else {
+            // };
 
-            let sym = styles.borrow();
+            let sym = symbol.borrow();
 
             return StyleValue::from_symbol(&sym, key);
         }
@@ -200,6 +239,13 @@ impl Node {
 
     pub fn bparent(&self) -> RwLockReadGuard<'_, Node> {
         self.parent.as_ref().unwrap().borrow()
+    }
+
+    pub fn is_displayed(&self) -> bool {
+        match &self.ty {
+            NodeType::View { .. } | NodeType::Text { .. } => true,
+            _ => false,
+        }
     }
 }
 
@@ -321,6 +367,9 @@ impl Element {
             // Layout each child and add it's requested size to the total area
             for child in node.children.iter() {
                 let node = child.borrow();
+                if !node.is_displayed() {
+                    continue;
+                }
                 // dbg!(node.element.id);
 
                 // The bounds of the space that has not been taken up yet
@@ -356,6 +405,9 @@ impl Element {
             // Layout each child and add it's requested size to the total area
             for child in node.children.iter() {
                 let node = child.borrow();
+                if !node.is_displayed() {
+                    continue;
+                }
 
                 // The bounds of the space that has not been taken up yet
                 let area = Rect::new(bounds.x0, bounds.y0, bounds.x1, bounds.y1 - rect.height());
@@ -391,6 +443,9 @@ impl Element {
             // Layout each child and add it's requested size to the total area
             for child in node.children.iter() {
                 let node = child.borrow();
+                if !node.is_displayed() {
+                    continue;
+                }
 
                 // The bounds of the space that has not been taken up yet
                 let area = Rect::new(bounds.x0 + rect.width(), bounds.y0, bounds.x1, bounds.y1);
@@ -426,6 +481,9 @@ impl Element {
             // Layout each child and add it's requested size to the total area
             for child in node.children.iter() {
                 let node = child.borrow();
+                if !node.is_displayed() {
+                    continue;
+                }
 
                 // The bounds of the space that has not been taken up yet
                 let area = Rect::new(bounds.x0, bounds.y0, bounds.x1 - rect.width(), bounds.y1);
@@ -526,6 +584,9 @@ impl Element {
     }
 
     pub fn draw(&self, node: &Node, dctx: &mut DrawingContext, document: &Document) {
+        if !node.is_displayed() {
+            return;
+        }
         let mut binding = get_id_mgr();
         let layout = binding.get_layout(self.id);
 

@@ -127,7 +127,7 @@ impl SimpleText {
                     .map(|h| h.advance_width)
                     .unwrap_or(0);
 
-                let mut pen_x = 0.5f64;
+                let mut pen_x = 0.0f64;
                 for ch in text.chars() {
                     let gid = cmap.map(ch as u32).unwrap_or(0);
                     let advance = hmetrics
@@ -137,7 +137,7 @@ impl SimpleText {
                         * scale;
                     if let Some(glyph) = provider.get(gid, brush) {
                         let xform = transform
-                            * Affine::translate((pen_x, (font.hhea().unwrap().ascender() as f64 * scale).ceil() + 0.5))
+                            * Affine::translate((pen_x, (font.hhea().unwrap().ascender() as f64 * scale).ceil()))
                             // * Affine::translate((pen_x, font.head().unwrap().y_min() as f64 * scale))
                         // * transform_from_align(ascent, descent, layout, valign, halign)
                         * Affine::scale_non_uniform(1.0, -1.0);

@@ -1,4 +1,4 @@
-use crate::token::{Operator, Span, SpannedToken, Token};
+use crate::token::{Operator, Span, SpannedToken, Token, Unit};
 
 pub struct Lexer {}
 
@@ -22,7 +22,7 @@ impl Lexer {
                     Token::Whitespace => position += 1,
                     Token::Newline => {
                         if let Some(indicies) = str_index {
-                            let st = &input[indicies.1..end_index-1];
+                            let st = &input[indicies.1..end_index - 1];
                             if verify_text(st) {
                                 tokens.truncate(indicies.0);
 
@@ -56,15 +56,6 @@ impl Lexer {
                             },
                         );
 
-                        // str_index = tokens.len();
-                        println!(
-                            "Toke {:?} {}",
-                            token.1,
-                            tokens
-                                .last()
-                                .map(|c| c.0.line_num < token.0.line_num)
-                                .unwrap_or(false)
-                        );
                         if str_index.is_none()
                             && tokens
                                 .last()
@@ -73,6 +64,48 @@ impl Lexer {
                         {
                             str_index = Some((tokens.len(), start_index));
                         }
+
+                        tokens.push(token);
+                        position += (end_index - start_index) as u32;
+                    }
+                    Token::Integer(i, _) => {
+                        let unit = if &input[end_index..end_index + 2] == "px" {
+                            end_index += 2;
+                            Some(Unit::Pixel)
+                        } else {
+                            None
+                        };
+
+                        let token = SpannedToken::new(
+                            Token::Integer(i, unit),
+                            Span {
+                                line_num,
+                                position,
+                                length: (end_index - start_index) as u32,
+                                token_index: tokens.len() as u32,
+                            },
+                        );
+
+                        tokens.push(token);
+                        position += (end_index - start_index) as u32;
+                    }
+                    Token::Float(f, _) => {
+                        let unit = if &input[end_index..end_index + 2] == "px" {
+                            end_index += 2;
+                            Some(Unit::Pixel)
+                        } else {
+                            None
+                        };
+
+                        let token = SpannedToken::new(
+                            Token::Float(f, unit),
+                            Span {
+                                line_num,
+                                position,
+                                length: (end_index - start_index) as u32,
+                                token_index: tokens.len() as u32,
+                            },
+                        );
 
                         tokens.push(token);
                         position += (end_index - start_index) as u32;
@@ -147,21 +180,21 @@ impl Lexer {
         {
             if cnt == 1 {
                 let val = input.parse().unwrap_or(0.0f64);
-                return Some(Token::Float(val));
+                return Some(Token::Float(val, None));
             } else {
                 let val = input.parse().unwrap_or(0u64);
-                return Some(Token::Integer(val));
+                return Some(Token::Integer(val, None));
             }
         }
 
         // If the next character is a delimeter
-        let del = match next.map(|c| !c.is_alphabetic()) {
+        let del = match next.map(|c| !(c.is_alphabetic() || c == '_')) {
             None => true,
             Some(t) => t,
         };
 
         // match identifiers
-        if input.chars().find(|c| !c.is_alphabetic()).is_none() && del {
+        if input.chars().find(|c| !(c.is_alphabetic() || *c == '_')).is_none() && del {
             return Some(Token::Ident(input.to_string()));
         }
 

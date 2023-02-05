@@ -1,16 +1,11 @@
-use std::{
-    io::{BufReader, Read},
-};
+use std::io::{BufReader, Read};
 
 use neb_errors::DocumentError;
 use neb_graphics::{drawing_context::DrawingContext, vello::kurbo::Rect};
 use neb_smf::{Module, Symbol, SymbolKind};
 use neb_util::{format::TreeDisplay, Rf};
 
-use crate::{
-    // svg::{self, PicoSvg},
-    node::{Node, NodeType},
-};
+use crate::node::{Node, NodeType};
 
 pub fn indent(size: usize) -> String {
     const INDENT: &'static str = "    ";
@@ -23,8 +18,6 @@ pub struct Document {
     errors: Vec<DocumentError>,
 
     body_root: Rf<Node>,
-
-    styles: Option<Rf<Symbol>>,
 }
 
 impl Document {
@@ -34,10 +27,6 @@ impl Document {
 
     pub fn get_body(&self) -> &Rf<Node> {
         &self.body_root
-    }
-
-    pub fn get_styles(&self) -> Option<&Rf<Symbol>> {
-        self.styles.as_ref()
     }
 }
 
@@ -55,6 +44,46 @@ impl Document {
             0,
             self,
         );
+    }
+
+    pub fn resolve_path<'a>(
+        &self,
+        nodeb: &Node,
+        mut path: impl Iterator<Item = &'a String>,
+    ) -> Option<Rf<Node>> {
+        match &nodeb.ty {
+            NodeType::Root | NodeType::View { .. } | NodeType::Setup | NodeType::StyleBlock => {
+                let Some(next) = path.next() else {
+                    return None
+                };
+                if let Some(val) = nodeb
+                    .children
+                    .iter()
+                    .find(|node| node.borrow().ty.as_str() == next)
+                    .cloned()
+                {
+                    {
+                        if let Some(node) = self.resolve_path(&val.borrow(), path) {
+                            return Some(node);
+                        }
+                    }
+
+                    return Some(val);
+                }
+
+                if let Some(val) = nodeb.children.iter().find_map(|f| {
+                    if let NodeType::Use(path) = &f.borrow().ty {
+                        let rt = self.body_root.borrow();
+                        return self.resolve_path(&rt, path.iter());
+                    }
+                    None
+                }) {
+                    return Some(val);
+                }
+            }
+            _ => (),
+        }
+        None
     }
 }
 
@@ -79,12 +108,12 @@ where
         root.add_child(p);
     }
 
-    println!("{}", root.borrow().format());
+    println!("Parsed {}", root.borrow().format());
 
     Document {
         errors: Vec::new(),
         body_root: root,
-        styles: None,
+        // styles: None,
     }
 }
 
@@ -112,6 +141,7 @@ fn build_nodes(parent: Rf<Node>, symbol: &Rf<Symbol>) -> Option<Rf<Node>> {
 
             Some(node)
         }
+        SymbolKind::Use(path) => Some(Rf::new(Node::new(NodeType::Use(path.clone()), parent))),
         SymbolKind::Style { properties } => Some(Rf::new(Node::new(
             NodeType::Style {
                 name: symbol.name.clone(),

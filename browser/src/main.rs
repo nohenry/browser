@@ -1,6 +1,6 @@
 use std::{fs::File, io::BufReader};
 
-use neb_core::dom_parser::parse_from_stream;
+use neb_core::document::parse_from_stream;
 
 fn main() {
     env_logger::init();

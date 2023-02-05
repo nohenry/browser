@@ -1,6 +1,6 @@
 #![feature(iter_intersperse)]
 
-pub mod dom_parser;
+pub mod document;
 
 pub use neb_graphics as gfx;
 

@@ -2,7 +2,7 @@ use std::fmt::Debug;
 
 use neb_util::format::{NodeDisplay, TreeDisplay};
 
-use crate::token::{Range, SpannedToken, Token};
+use crate::token::{Range, SpannedToken, Token, Unit};
 
 pub trait AstNode: TreeDisplay {
     fn get_range(&self) -> Range;
@@ -265,8 +265,8 @@ impl TreeDisplay for Expression {
 
 #[derive(Clone)]
 pub enum Value {
-    Integer(u64, SpannedToken),
-    Float(f64, SpannedToken),
+    Integer(u64, Option<Unit>, SpannedToken),
+    Float(f64, Option<Unit>, SpannedToken),
     Ident(SpannedToken),
     Function {
         ident: Option<SpannedToken>,
@@ -294,8 +294,8 @@ impl AstNode for Value {
                 (Some(s), Some(e)) => Range::from((&s.get_range(), &e.get_range())),
                 _ => Range::default(),
             },
-            Self::Integer(_, s) => s.0.into(),
-            Self::Float(_, s) => s.0.into(),
+            Self::Integer(_, _, s) => s.0.into(),
+            Self::Float(_, _, s) => s.0.into(),
             Self::Ident(s) => s.0.into(),
             Self::Function { ident: None, args } => args.get_range(),
             Self::Function {
@@ -309,8 +309,10 @@ impl AstNode for Value {
 impl NodeDisplay for Value {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
-            Self::Integer(i, _) => write!(f, "{}", i),
-            Self::Float(i, _) => write!(f, "{}", i),
+            Self::Integer(i, Some(u), _) => write!(f, "{}{}", i, u),
+            Self::Float(i, Some(u), _) => write!(f, "{}{}", i, u),
+            Self::Integer(i, None, _) => write!(f, "{}", i),
+            Self::Float(i, None, _) => write!(f, "{}", i),
             Self::Ident(SpannedToken(_, Token::Ident(i))) => write!(f, "{}", i),
             Self::Function {
                 ident: Some(SpannedToken(_, Token::Ident(i))),

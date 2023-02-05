@@ -4,8 +4,10 @@ use std::fmt::{Debug, Display};
 use neb_graphics::vello::kurbo::{Rect, RoundedRectRadii};
 use neb_graphics::vello::peniko::Color;
 use neb_macros::EnumHash;
-use neb_smf::ast::Value;
-use neb_smf::{Symbol, SymbolKind};
+use neb_smf::ast::{ElementArgs, Value};
+use neb_smf::token::{SpannedToken, Token, Unit};
+
+use crate::node::{Node, NodeType};
 
 #[derive(Debug, Clone, Copy)]
 pub enum Direction {
@@ -45,30 +47,161 @@ pub fn color_from_iter<'a>(mut iter: impl Iterator<Item = &'a Value>) -> Option<
     let r = iter.next()?;
     let g = iter.next()?;
     let b = iter.next()?;
-    match (r, g, b) {
-        (Value::Integer(r, _), Value::Integer(g, _), Value::Integer(b, _)) => Some(Color {
+    let a = iter.next();
+    match (r, g, b, a) {
+        (
+            Value::Integer(r, None, _),
+            Value::Integer(g, None, _),
+            Value::Integer(b, None, _),
+            None,
+        ) => Some(Color {
             r: *r as _,
             g: *g as _,
             b: *b as _,
             a: 255,
         }),
+        (
+            Value::Integer(r, None, _),
+            Value::Integer(g, None, _),
+            Value::Integer(b, None, _),
+            Some(Value::Integer(a, None, _)),
+        ) => Some(Color {
+            r: *r as _,
+            g: *g as _,
+            b: *b as _,
+            a: *a as _,
+        }),
         _ => None,
     }
 }
 
+fn value_unit(val: &Value) -> Option<UnitValue> {
+    match val {
+        Value::Integer(u, Some(Unit::Pixel), _) => Some(UnitValue::Pixels(*u as _)),
+        Value::Float(u, Some(Unit::Pixel), _) => Some(UnitValue::Pixels(*u)),
+        _ => None,
+    }
+}
+
+fn rect_form_iter<'a>(mut iter: impl Iterator<Item = &'a Value>) -> Option<UnitRect> {
+    let a = value_unit(iter.next()?)?;
+    let b = value_unit(iter.next()?)?;
+    let c = value_unit(iter.next()?)?;
+    let d = value_unit(iter.next()?)?;
+
+    Some(UnitRect::new(a, b, c, d))
+}
+
+fn rect_xy_form_iter<'a>(mut iter: impl Iterator<Item = &'a Value>) -> Option<UnitRect> {
+    let a = value_unit(iter.next()?)?;
+    let b = value_unit(iter.next()?)?;
+    Some(UnitRect::new(a, b, a, b))
+}
+
+fn rect_all_form_iter<'a>(mut iter: impl Iterator<Item = &'a Value>) -> Option<UnitRect> {
+    let a = value_unit(iter.next()?)?;
+    Some(UnitRect::new(a, a, a, a))
+}
+
+// fn verify_enum()
+
 impl StyleValue {
-    pub fn from_symbol(sym: &Symbol, prop_key: &str) -> StyleValue {
-        match &sym.kind {
-            SymbolKind::Style { properties } => {
+    fn build_function(key: &str, func: &str, args: &ElementArgs) -> StyleValue {
+        match func {
+            "rgb" => {
+                let Some(color) = color_from_iter(args.iter_values()) else {
+                    return StyleValue::Empty
+                };
+
+                match key {
+                    "foregroundColor" => return StyleValue::ForegroundColor { color },
+                    "backgroundColor" => return StyleValue::BackgroundColor { color },
+                    "borderColor" => return StyleValue::BorderColor { color },
+                    _ => (),
+                }
+            }
+            "rect_xy" => {
+                let Some(rect) = rect_xy_form_iter(args.iter_values()) else {
+                    return StyleValue::Empty;
+                };
+
+                match key {
+                    "padding" => return StyleValue::Padding { rect },
+                    "radius" => return StyleValue::Radius { rect },
+                    "borderWidth" => return StyleValue::BorderWidth { rect },
+                    _ => (),
+                }
+            }
+            "rect_all" => {
+                let Some(rect) = rect_all_form_iter(args.iter_values()) else {
+                    return StyleValue::Empty;
+                };
+
+                match key {
+                    "padding" => return StyleValue::Padding { rect },
+                    "radius" => return StyleValue::Radius { rect },
+                    "borderWidth" => return StyleValue::BorderWidth { rect },
+                    _ => (),
+                }
+            }
+            "rect" => {
+                let Some(rect) = rect_form_iter(args.iter_values()) else {
+                    return StyleValue::Empty;
+                };
+
+                match key {
+                    "padding" => return StyleValue::Padding { rect },
+                    "radius" => return StyleValue::Radius { rect },
+                    "borderWidth" => return StyleValue::BorderWidth { rect },
+                    _ => (),
+                }
+            }
+            _ => (),
+        }
+        StyleValue::Empty
+    }
+
+    pub fn from_symbol(sym: &Node, prop_key: &str) -> StyleValue {
+        match &sym.ty {
+            NodeType::Style { properties, .. } => {
                 if let Some(prop) = properties.get(prop_key) {
-                    let func = prop.as_function();
-                    match (prop_key, func) {
-                        (
-                            "backgroundColor" | "foregroundColor" | "borderColor",
-                            Some(("rgb", args)),
-                        ) => {
-                            if let Some(color) = color_from_iter(args.iter_values()) {
-                                return StyleValue::BackgroundColor { color };
+                    match prop {
+                        Value::Function {
+                            ident: Some(SpannedToken(_, Token::Ident(i))),
+                            args,
+                        } => return StyleValue::build_function(prop_key, i, args),
+                        Value::Float(_, _, _) | Value::Integer(_, _, _) => {
+                            let Some(uv) = value_unit(prop) else {
+                                return StyleValue::Empty
+                            };
+                            match prop_key {
+                                "gap" => return StyleValue::Gap { amount: uv },
+                                _ => (),
+                            }
+                        }
+                        Value::Ident(SpannedToken(_, Token::Ident(id))) => {
+                            match (prop_key, id.as_str()) {
+                                ("direction", "Vertical") => {
+                                    return StyleValue::Direction {
+                                        direction: Direction::Vertical,
+                                    }
+                                }
+                                ("direction", "Horizontal") => {
+                                    return StyleValue::Direction {
+                                        direction: Direction::Vertical,
+                                    }
+                                }
+                                ("direction", "VerticalReverse") => {
+                                    return StyleValue::Direction {
+                                        direction: Direction::Vertical,
+                                    }
+                                }
+                                ("direction", "HorizontalReverse") => {
+                                    return StyleValue::Direction {
+                                        direction: Direction::Vertical,
+                                    }
+                                }
+                                _ => (),
                             }
                         }
                         _ => (),
@@ -205,314 +338,3 @@ impl TryInto<RoundedRectRadii> for UnitRect {
         }
     }
 }
-
-/*
-#[derive(Debug)]
-pub struct Selector {
-    // element: Cow<'a, str>,
-    element: String,
-    values: HashMap<String, StyleValue>,
-}
-
-impl Selector {
-    // pub fn hashes(&self) -> impl Iterator<Item = (u64, &StyleValue)> + '_ {
-    //     self.values.iter().map(|f| (calculate_hash(f.0), f.1))
-    // }
-    pub fn values(&self) -> Values<String, StyleValue> {
-        self.values.values()
-    }
-
-    pub fn get(&self, key: &str) -> Option<&StyleValue> {
-        self.values.get(key)
-    }
-
-    pub fn map(&self) -> &HashMap<String, StyleValue> {
-        &self.values
-    }
-}
-
-pub fn parse_styles(
-    input: &str,
-) -> Result<HashMap<String, Rf<Selector>>, nom::Err<nom::error::Error<&[u8]>>> {
-    let mut map = HashMap::new();
-
-    let (_, styles) = parse_styles_impl(input.as_bytes())?;
-    dbg!(&styles);
-    for style in styles {
-        map.insert(style.element.clone(), Rf::new(style));
-    }
-
-    Ok(map)
-}
-
-pub fn parse_styles_impl(bytes: &[u8]) -> IResult<&[u8], Vec<Selector>> {
-    many0(map(pair(alpha1, parse_block), |val| {
-        let key = std::str::from_utf8(val.0);
-        let key = key.unwrap().to_owned();
-        Selector {
-            element: key,
-            values: val.1,
-        }
-    }))(bytes)
-}
-
-pub fn parse_block(bytes: &[u8]) -> IResult<&[u8], HashMap<String, StyleValue>> {
-    map(
-        delimited(
-            wa(tag("{")),
-            separated_list0(wal(tag("\n")), parse_value),
-            wa(tag("}")),
-        ),
-        |vals| {
-            let mut hm = HashMap::new();
-            for val in vals {
-                hm.insert(val.0, val.1);
-            }
-            hm
-            // vals.into_iter().map(|f| f.1).collect()
-        },
-    )(bytes)
-}
-
-pub fn parse_value(bytes: &[u8]) -> IResult<&[u8], (String, StyleValue)> {
-    let (val, (key, _)) = separated_pair(
-        alpha1,
-        wal(tag(":")),
-        take_while(is_none_of::<&[u8], &str>("\n")),
-    )(bytes)?;
-
-    let st = std::str::from_utf8(key).unwrap();
-
-    let hash = calculate_hash(st);
-
-    dbg!(st, hash);
-    let (bytes, style) = match hash {
-        StyleValueHashes::BackgroundColor => {
-            let (bytes, color) = parse_color(val)?;
-            (bytes, StyleValue::BackgroundColor { color })
-        }
-        StyleValueHashes::Gap => {
-            let (bytes, value) = parse_units_values(val)?;
-            (bytes, StyleValue::Gap { amount: value })
-        }
-        StyleValueHashes::Padding => {
-            let (bytes, value) = parse_rect(val)?;
-            (bytes, StyleValue::Padding { rect: value })
-        }
-        StyleValueHashes::BorderColor => {
-            let (bytes, value) = parse_color(val)?;
-            (bytes, StyleValue::BorderColor { color: value })
-        }
-        StyleValueHashes::BorderWidth => {
-            let (bytes, value) = parse_rect(val)?;
-            (bytes, StyleValue::BorderWidth { rect: value })
-        }
-        StyleValueHashes::ForegroundColor => {
-            let (bytes, value) = parse_color(val)?;
-            (bytes, StyleValue::ForegroundColor { color: value })
-        }
-        StyleValueHashes::Radius => {
-            let (bytes, value) = parse_rect(val)?;
-            (bytes, StyleValue::Radius { rect: value })
-        }
-        StyleValueHashes::Direction => {
-            let (bytes, value) = parse_direction(val)?;
-            (bytes, StyleValue::Direction { direction: value })
-        }
-        _ => panic!(),
-    };
-
-    Ok((bytes, (st.into(), style)))
-}
-
-pub fn parse_color(bytes: &[u8]) -> IResult<&[u8], Color> {
-    alt((parse_rgb, parse_hex))(bytes)
-}
-
-pub fn parse_rgb(bytes: &[u8]) -> IResult<&[u8], Color> {
-    preceded(
-        tag("rgb"),
-        delimited(
-            wal(tag("(")),
-            map(separated_list1(wal(tag(",")), digit1), |val| {
-                let r = std::str::from_utf8(val[0]).unwrap().parse::<u8>().unwrap();
-                let g = std::str::from_utf8(val[1]).unwrap().parse::<u8>().unwrap();
-                let b = std::str::from_utf8(val[2]).unwrap().parse::<u8>().unwrap();
-                Color::rgb8(r, g, b)
-            }),
-            wal(tag(")")),
-        ),
-    )(bytes)
-}
-
-pub fn parse_hex(bytes: &[u8]) -> IResult<&[u8], Color> {
-    preceded(
-        tag("#"),
-        map_res(
-            hex_digit1,
-            |digit| {
-                let str = std::str::from_utf8(digit).unwrap();
-                if str.len() == 3 {
-                    let mut it = str.chars();
-                    let r = char_to_hex(it.next().unwrap());
-                    let g = char_to_hex(it.next().unwrap());
-                    let b = char_to_hex(it.next().unwrap());
-                    Ok(Color::rgb8(r, g, b))
-                } else if str.len() == 6 {
-                    let mut it = str.chars();
-
-                    let r1 = it.next().unwrap();
-                    let r2 = it.next().unwrap();
-                    let p = char_to_hex(r1);
-                    let r = p << 4 | char_to_hex(r2);
-
-                    let g1 = it.next().unwrap();
-                    let g2 = it.next().unwrap();
-                    let g = char_to_hex(g1) << 4 | char_to_hex(g2);
-
-                    let b1 = it.next().unwrap();
-                    let b2 = it.next().unwrap();
-                    let b = char_to_hex(b1) << 4 | char_to_hex(b2);
-
-                    Ok(Color::rgb8(r, g, b))
-                } else {
-                    Err(nom::Err::Error(nom::error::Error::new(
-                        bytes,
-                        nom::error::ErrorKind::Char,
-                    )))
-                }
-            }, // pair(
-
-               //     one_of("0123456789abcdefABCDEF"),
-               //     one_of("0123456789abcdefABCDEF"),
-               // ),
-               // |(a, b)| {
-               //     let hi = char_to_hex(a);
-               //     let lo = char_to_hex(b);
-
-               //     (hi << 4) & lo
-               // },
-        ),
-    )(bytes)
-}
-
-pub fn parse_direction(bytes: &[u8]) -> IResult<&[u8], Direction> {
-    map(
-        alt((
-            tag("Vertical"),
-            tag("VerticalReverse"),
-            tag("Horizontal"),
-            tag("HorizontalReverse"),
-        )),
-        |val| match std::str::from_utf8(val).unwrap() {
-            "Vertical" => Direction::Vertical,
-            "VerticalReverse" => Direction::VerticalReverse,
-            "Horizontal" => Direction::Horizontal,
-            "HorizontalReverse" => Direction::HorizontalReverse,
-            _ => panic!(),
-        },
-    )(bytes)
-}
-
-pub fn parse_rect(bytes: &[u8]) -> IResult<&[u8], UnitRect> {
-    map_res(
-        separated_list1(wal(tag(",")), parse_units_values),
-        |vals| match vals.len() {
-            1 => Ok(UnitRect::new(vals[0], vals[0], vals[0], vals[0])),
-            2 => Ok(UnitRect::new(vals[0], vals[1], vals[0], vals[1])),
-            4 => Ok(UnitRect::new(vals[0], vals[1], vals[2], vals[3])),
-            _ => Err(nom::Err::Error(nom::error::Error::new(
-                bytes,
-                nom::error::ErrorKind::SeparatedList,
-            ))),
-        },
-    )(bytes)
-}
-
-
-
-pub fn parse_units_values(bytes: &[u8]) -> IResult<&[u8], UnitValue> {
-    map(terminated(recognize_float, tag("px")), |val| {
-        UnitValue::Pixels(std::str::from_utf8(val).unwrap().parse::<f64>().unwrap())
-    })(bytes)
-}
-
-fn calculate_hash<T>(t: &T) -> u64
-where
-    T: Hash + ?Sized,
-{
-    let mut state = DefaultHasher::new();
-    t.hash(&mut state);
-    state.finish()
-}
-
-fn char_to_hex(c: char) -> u8 {
-    let c = c.to_ascii_lowercase() as u8;
-    if c >= b'a' {
-        c - b'a' + 9
-    } else {
-        c - b'0'
-    }
-}
-
-pub fn is_none_of<I, T>(list: T) -> impl Fn(<I as InputTakeAtPosition>::Item) -> bool
-where
-    I: InputTakeAtPosition,
-    <I as InputTakeAtPosition>::Item: AsChar + Copy,
-    T: FindToken<<I as InputTakeAtPosition>::Item>,
-{
-    move |c| list.find_token(c)
-}
-
-pub fn ws<I, E: ParseError<I>>() -> impl FnMut(I) -> IResult<I, I, E>
-where
-    I: InputTakeAtPosition,
-    <I as InputTakeAtPosition>::Item: AsChar + Copy,
-{
-    take_while(|c: <I as InputTakeAtPosition>::Item| {
-        match <<I as InputTakeAtPosition>::Item as AsChar>::as_char(c) {
-            ' ' | '\t' | '\n' | '\r' => true,
-            _ => false,
-        }
-    })
-}
-
-pub fn wa<I, O1, E: ParseError<I>, F>(mut first: F) -> impl FnMut(I) -> IResult<I, O1, E>
-where
-    I: InputTakeAtPosition,
-    <I as InputTakeAtPosition>::Item: AsChar + Copy,
-    F: nom::Parser<I, O1, E>,
-{
-    move |input: I| {
-        let (input, _) = nom::Parser::parse(&mut ws(), input)?;
-        let (input, o1) = first.parse(input)?;
-        nom::Parser::parse(&mut ws(), input).map(|(i, _)| (i, o1))
-    }
-}
-
-pub fn wsl<I, E: ParseError<I>>() -> impl FnMut(I) -> IResult<I, I, E>
-where
-    I: InputTakeAtPosition,
-    <I as InputTakeAtPosition>::Item: AsChar + Copy,
-{
-    take_while(|c: <I as InputTakeAtPosition>::Item| {
-        match <<I as InputTakeAtPosition>::Item as AsChar>::as_char(c) {
-            ' ' | '\t' => true,
-            _ => false,
-        }
-    })
-}
-
-pub fn wal<I, O1, E: ParseError<I>, F>(mut first: F) -> impl FnMut(I) -> IResult<I, O1, E>
-where
-    I: InputTakeAtPosition,
-    <I as InputTakeAtPosition>::Item: AsChar + Copy,
-    F: nom::Parser<I, O1, E>,
-{
-    move |input: I| {
-        let (input, _) = nom::Parser::parse(&mut wsl(), input)?;
-        let (input, o1) = first.parse(input)?;
-        nom::Parser::parse(&mut wsl(), input).map(|(i, _)| (i, o1))
-    }
-}
- */

@@ -1,4 +1,4 @@
-use std::sync::RwLock;
+use std::{sync::RwLock, fmt::Display};
 
 use neb_util::format::{NodeDisplay, TreeDisplay};
 
@@ -33,12 +33,26 @@ pub enum Keyword {
     // Output,
 }
 
+
+#[derive(Debug, Clone, Copy)]
+pub enum Unit {
+    Pixel
+}
+
+impl Display for Unit {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+       match self {
+            Unit::Pixel => f.write_str("px") 
+       } 
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum Token {
     Ident(String),
     Text(String),
-    Integer(u64),
-    Float(f64),
+    Integer(u64, Option<Unit>),
+    Float(f64, Option<Unit>),
     Operator(Operator),
 
     // Keyword(Keyword),
@@ -52,8 +66,10 @@ impl NodeDisplay for Token {
             Self::Ident(s) => f.write_str(s),
             Self::Text(s) => f.write_str(s),
             Self::Operator(o) => f.write_str(o.as_str()),
-            Self::Integer(i) => write!(f, "{}", i),
-            Self::Float(fl) => write!(f, "{}", fl),
+            Self::Integer(i, Some(u)) => write!(f, "{}{}", i, u),
+            Self::Float(fl, Some(u)) => write!(f, "{}{}", fl, u),
+            Self::Integer(i, _) => write!(f, "{}", i),
+            Self::Float(fl, _) => write!(f, "{}", fl),
             Self::Newline => f.write_str("Newline"),
             Self::Whitespace => f.write_str("Whitespace"),
         }

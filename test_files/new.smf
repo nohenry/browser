@@ -1,14 +1,25 @@
 setup {
     style {
         centered {
-            backgroundColor: rgb(1, 2, 3)
+            gap: 40px
+            padding: rect_all(10px)
+        }
+
+        item {
+            backgroundColor: rgb(200, 10, 10)
+            padding: rect_all(50px)
         }
     }
 }
 
-use setup.style.centered
+use setup.style
 
 view (class: centered) {
-    This is some test text
+    view (class: item) {
+        First Item 
+    }
 
+    view (class: item) {
+        Second Item
+    }
 }
