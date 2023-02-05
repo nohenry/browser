@@ -21,8 +21,13 @@ impl Lexer {
                 match token {
                     Token::Whitespace => position += 1,
                     Token::Newline => {
+                        let ce = end_index - 1;
+                        if &input[start_index..end_index+1] == "\r\n" {
+                            end_index += 1;
+                            // continue;
+                        }
                         if let Some(indicies) = str_index {
-                            let st = &input[indicies.1..end_index - 1];
+                            let st = &input[indicies.1..ce];
                             if verify_text(st) {
 
                                 let token = SpannedToken::new(
@@ -30,7 +35,7 @@ impl Lexer {
                                     Span {
                                         line_num: tokens[indicies.0 as usize].span().line_num,
                                         position: tokens[indicies.0 as usize].span().position,
-                                        length: ((end_index - 1) - indicies.1) as u32,
+                                        length: st.len() as u32,
                                         token_index: tokens.len() as u32,
                                     },
                                 );
@@ -158,7 +163,7 @@ impl Lexer {
                 Some(':') => return Some(Token::Operator(Operator::Colon)),
                 Some('.') => return Some(Token::Operator(Operator::Dot)),
                 Some(',') => return Some(Token::Operator(Operator::Comma)),
-                Some('\n') => return Some(Token::Newline),
+                Some('\r' | '\n') => return Some(Token::Newline),
                 Some(c) if c.is_whitespace() => return Some(Token::Whitespace),
                 _ => (),
             }
@@ -199,7 +204,7 @@ impl Lexer {
             return Some(Token::Ident(input.to_string()));
         }
 
-        if let Some('\n') = next {
+        if let Some('\n' | '\r') = next {
             return Some(Token::Text(input.to_string()));
         }
 

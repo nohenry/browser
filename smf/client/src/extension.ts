@@ -3,230 +3,303 @@
  * Licensed under the MIT License. See License.txt in the project root for license information.
  * ------------------------------------------------------------------------------------------ */
 
-import * as path from 'path';
-import { workspace, ExtensionContext, FileType as VFileType, FileSystemProvider, FileChangeEvent, EventEmitter, Event, Uri, FileSystemError } from 'vscode';
-import * as net from 'net';
+import * as path from 'path'
+import {
+    workspace,
+    ExtensionContext,
+    FileType as VFileType,
+    FileSystemProvider,
+    FileChangeEvent,
+    EventEmitter,
+    Event,
+    Uri,
+    FileSystemError,
+    languages,
+    InputBoxOptions,
+    window,
+	ConfigurationTarget,
+} from 'vscode'
+import * as net from 'net'
 import { exec } from 'child_process'
 
 import {
-	Disposable,
-	Executable,
-	LanguageClient,
-	LanguageClientOptions,
-	RequestType,
-	ServerOptions,
-	StreamInfo,
-	TransportKind
-} from 'vscode-languageclient/node';
+    Disposable,
+    Executable,
+    LanguageClient,
+    LanguageClientOptions,
+    RequestType,
+    ServerOptions,
+    StreamInfo,
+    TransportKind,
+} from 'vscode-languageclient/node'
+import { getVSCodeDownloadUrl } from '@vscode/test-electron/out/util'
 
-let client: LanguageClient;
+let client: LanguageClient
 
-export function activate(context: ExtensionContext) {
-	// The server is implemented in node
-	const serverModule = context.asAbsolutePath(
-		// path.join('server', 'out', 'server.js')
-		path.join('..', 'target', 'debug', 'rserver')
-	);
-	console.log('Helrjowieri')
+export async function activate(context: ExtensionContext) {
+    // The server is implemented in node
+    // const serverModule = context.asAbsolutePath(
+    // 	// path.join('server', 'out', 'server.js')
+    // 	path.join('..', 'target', 'debug', 'rserver')
+    // );
 
-	let connectionInfo = {
-		port: 5007,
-		host: "127.0.0.1"
-	};
+    let serverModule = workspace.getConfiguration('smf').get<string>('lsPath')
 
-	const ex: Executable = { command: serverModule };
-	// If the extension is launched in debug mode then the debug server options are used
-	// Otherwise the run options are used
-	// const serverOptions: ServerOptions = {
-	// 	run: ex,
-	// 	debug: ex
-	// };
+    // serverModule = context.asAbsolutePath(serverModule)
 
-	// Options to control the language client
-	const clientOptions: LanguageClientOptions = {
-		// Register the server for plain text documents
-		// documentSelector: [{ scheme: 'file', language: 'WGSL' }],
-		documentSelector: [{ scheme: 'file', language: 'smf' }],
-		synchronize: {
-			// Notify the server about file changes to '.clientrc files contained in the workspace
-			fileEvents: workspace.createFileSystemWatcher('**/.clientrc')
-		}
-	};
+	if (serverModule === '') {
+		serverModule = await promptLSPath()
+		console.log('dlkfjs', serverModule)
+    	// serverModule = context.asAbsolutePath(serverModule)
+	}
+
+	if (serverModule === '') {
+		console.error('Unable to find language server binary!')
+		return;
+	}
+    // serverModule = context.asAbsolutePath(serverModule)
 
 
-	let serverOptions = () => {
-		return new Promise<StreamInfo>((resolve, reject) => {
-			let ls = exec(`${serverModule}`)
+    console.log('config', serverModule)
 
+    // const serverModule = path.join('..', 'target', 'debug', 'rserver');
+    console.log('Helrjowieri')
 
+    let connectionInfo = {
+        port: 5007,
+        host: '127.0.0.1',
+    }
 
+    const ex: Executable = { command: serverModule }
+    // If the extension is launched in debug mode then the debug server options are used
+    // Otherwise the run options are used
+    // const serverOptions: ServerOptions = {
+    // 	run: ex,
+    // 	debug: ex
+    // };
 
-			ls.stdout.on('data', (data) => {
-				console.log('fjsdklf', data)
-				let socket = net.connect(connectionInfo);
-				let result: StreamInfo = {
-					writer: socket,
-					reader: socket
-				};
-				resolve(result)
-			});
-		})
-		// Connect to language server via socket
-		// let ls = exec(`${serverModule}`)
-		// ls.stdout.on('data', function (data) {
-		// 	console.log('stdout: ' + data.toString());
-		// });
-		// let socket = net.connect(connectionInfo);
-		// let result: StreamInfo = {
-		// 	writer: socket,
-		// 	reader: socket
-		// };
-		// return Promise.resolve(result);
-	};
+    // Options to control the language client
+    const clientOptions: LanguageClientOptions = {
+        // Register the server for plain text documents
+        // documentSelector: [{ scheme: 'file', language: 'WGSL' }],
+        documentSelector: [{ scheme: 'file', language: 'smf' }],
+        synchronize: {
+            // Notify the server about file changes to '.clientrc files contained in the workspace
+            fileEvents: workspace.createFileSystemWatcher('**/.clientrc'),
+        },
+    }
 
+    let serverOptions = () => {
+        return new Promise<StreamInfo>((resolve, reject) => {
+            let ls = exec(`${serverModule}`)
 
-	// Create the language client and start the client.
-	client = new LanguageClient(
-		'languageServerExample',
-		'Language Server Example',
-		serverOptions,
-		clientOptions
-	);
+            ls.stdout.on('data', data => {
+                console.log('fjsdklf', data)
+                let socket = net.connect(connectionInfo)
+                let result: StreamInfo = {
+                    writer: socket,
+                    reader: socket,
+                }
+                resolve(result)
+            })
+        })
+        // Connect to language server via socket
+        // let ls = exec(`${serverModule}`)
+        // ls.stdout.on('data', function (data) {
+        // 	console.log('stdout: ' + data.toString());
+        // });
+        // let socket = net.connect(connectionInfo);
+        // let result: StreamInfo = {
+        // 	writer: socket,
+        // 	reader: socket
+        // };
+        // return Promise.resolve(result);
+    }
 
+    // Create the language client and start the client.
+    client = new LanguageClient(
+        'languageServerExample',
+        'Language Server Example',
+        serverOptions,
+        clientOptions
+    )
 
+    // Start the client. This will also launch the server
+    client.start()
 
+    // client.onReady().then(() => {
+    // 	client.onRequest('sourceOpen', (path: string, name: string) => {
 
-	// Start the client. This will also launch the server
-	client.start();
+    // 		return 2;
+    // 	});
+    // });
 
-	// client.onReady().then(() => {
-	// 	client.onRequest('sourceOpen', (path: string, name: string) => {
+    let clientPromise = new Promise<LanguageClient>((resolve, reject) => {
+        client.onReady().then(
+            () => {
+                resolve(client)
+            },
+            error => {
+                reject(error)
+            }
+        )
+    })
 
-	// 		return 2;
-	// 	});
-	// });
-
-	let clientPromise = new Promise<LanguageClient>((resolve, reject) => {
-		client.onReady().then(() => {
-			resolve(client);
-		}, (error) => {
-			reject(error);
-		});
-	});
-
-	workspace.registerFileSystemProvider('lsif', new LsifFS(clientPromise), { isCaseSensitive: true, isReadonly: true });
-
-
+    workspace.registerFileSystemProvider('lsif', new LsifFS(clientPromise), {
+        isCaseSensitive: true,
+        isReadonly: true,
+    })
 }
 
 export function deactivate(): Thenable<void> | undefined {
-	if (!client) {
-		return undefined;
-	}
-	return client.stop();
+    if (!client) {
+        return undefined
+    }
+    return client.stop()
 }
 
+async function promptLSPath(): Promise<string> {
+    let options: InputBoxOptions = {
+        prompt: 'Please enter path to SMF langauage server: ',
+    }
+
+    let value = await window.showInputBox(options)
+	value = path.normalize(value);
+    workspace.getConfiguration('smf').update('lsPath', value, ConfigurationTarget.Global)
+    return value
+}
 
 namespace FileType {
-	export const Unknown: 0 = 0;
-	export const File: 1 = 1;
-	export const Directory: 2 = 2;
-	export const SymbolicLink = 64;
+    export const Unknown: 0 = 0
+    export const File: 1 = 1
+    export const Directory: 2 = 2
+    export const SymbolicLink = 64
 }
 
-type FileType = 0 | 1 | 2 | 64;
+type FileType = 0 | 1 | 2 | 64
 
 interface FileStat {
-	type: FileType;
-	ctime: number;
-	mtime: number;
-	size: number;
+    type: FileType
+    ctime: number
+    mtime: number
+    size: number
 }
 
 interface StatFileParams {
-	uri: string;
+    uri: string
 }
 
 namespace StatFileRequest {
-	export const type = new RequestType<StatFileParams, FileStat | null, void>('lsif/statFile');
+    export const type = new RequestType<StatFileParams, FileStat | null, void>(
+        'lsif/statFile'
+    )
 }
 
 interface ReadFileParams {
-	uri: string;
+    uri: string
 }
 
 namespace ReadFileRequest {
-	export const type = new RequestType<ReadFileParams, string, void>('lsif/readfile');
+    export const type = new RequestType<ReadFileParams, string, void>(
+        'lsif/readfile'
+    )
 }
 
 interface ReadDirectoryParams {
-	uri: string;
+    uri: string
 }
 
 namespace ReadDirectoryRequest {
-	export const type = new RequestType<ReadDirectoryParams, [string, FileType][], void>('lsif/readDirectory');
+    export const type = new RequestType<
+        ReadDirectoryParams,
+        [string, FileType][],
+        void
+    >('lsif/readDirectory')
 }
 
 class LsifFS implements FileSystemProvider {
+    private readonly client: Promise<LanguageClient>
 
-	private readonly client: Promise<LanguageClient>;
+    private readonly emitter: EventEmitter<FileChangeEvent[]>
+    public readonly onDidChangeFile: Event<FileChangeEvent[]>
 
-	private readonly emitter: EventEmitter<FileChangeEvent[]>;
-	public readonly onDidChangeFile: Event<FileChangeEvent[]>;
+    public constructor(client: Promise<LanguageClient>) {
+        this.client = client
+        this.emitter = new EventEmitter<FileChangeEvent[]>()
+        this.onDidChangeFile = this.emitter.event
+    }
 
-	public constructor(client: Promise<LanguageClient>) {
-		this.client = client;
-		this.emitter = new EventEmitter<FileChangeEvent[]>();
-		this.onDidChangeFile = this.emitter.event;
-	}
+    watch(
+        uri: Uri,
+        options: { recursive: boolean; excludes: string[] }
+    ): Disposable {
+        // The LSIF file systrem never changes.
+        return Disposable.create((): void => {})
+    }
 
-	watch(uri: Uri, options: { recursive: boolean; excludes: string[]; }): Disposable {
-		// The LSIF file systrem never changes.
-		return Disposable.create((): void => { });
-	}
+    async stat(uri: Uri): Promise<FileStat> {
+        const client = await this.client
+        return client
+            .sendRequest(StatFileRequest.type, {
+                uri: client.code2ProtocolConverter.asUri(uri),
+            })
+            .then(
+                value => {
+                    if (!value) {
+                        throw FileSystemError.FileNotFound(uri)
+                    }
+                    return value
+                },
+                error => {
+                    throw FileSystemError.FileNotFound(uri)
+                }
+            )
+    }
 
-	async stat(uri: Uri): Promise<FileStat> {
-		const client = await this.client;
-		return client.sendRequest(StatFileRequest.type, { uri: client.code2ProtocolConverter.asUri(uri) }).then((value) => {
-			if (!value) {
-				throw FileSystemError.FileNotFound(uri);
-			}
-			return value;
-		}, (error) => {
-			throw FileSystemError.FileNotFound(uri);
-		});
-	}
+    async readDirectory(uri: Uri): Promise<[string, VFileType][]> {
+        const client = await this.client
+        const params: ReadDirectoryParams = {
+            uri: client.code2ProtocolConverter.asUri(uri),
+        }
+        return client
+            .sendRequest(ReadDirectoryRequest.type, params)
+            .then(values => {
+                return values
+            })
+    }
 
-	async readDirectory(uri: Uri): Promise<[string, VFileType][]> {
-		const client = await this.client;
-		const params: ReadDirectoryParams = { uri: client.code2ProtocolConverter.asUri(uri) };
-		return client.sendRequest(ReadDirectoryRequest.type, params).then((values) => {
-			return values;
-		});
-	}
+    async readFile(uri: Uri): Promise<Uint8Array> {
+        const client = await this.client
+        const params: ReadFileParams = {
+            uri: client.code2ProtocolConverter.asUri(uri),
+        }
+        return client.sendRequest(ReadFileRequest.type, params).then(value => {
+            const result = new Uint8Array(Buffer.from(value, 'base64'))
+            return result
+        })
+    }
 
-	async readFile(uri: Uri): Promise<Uint8Array> {
-		const client = await this.client;
-		const params: ReadFileParams = { uri: client.code2ProtocolConverter.asUri(uri) };
-		return client.sendRequest(ReadFileRequest.type, params).then((value) => {
-			const result = new Uint8Array(Buffer.from(value, 'base64'));
-			return result;
-		});
-	}
+    createDirectory(uri: Uri): void | Thenable<void> {
+        throw new Error('File system is readonly.')
+    }
 
-	createDirectory(uri: Uri): void | Thenable<void> {
-		throw new Error('File system is readonly.');
-	}
+    writeFile(
+        uri: Uri,
+        content: Uint8Array,
+        options: { create: boolean; overwrite: boolean }
+    ): void | Thenable<void> {
+        throw new Error('File system is readonly.')
+    }
 
-	writeFile(uri: Uri, content: Uint8Array, options: { create: boolean; overwrite: boolean; }): void | Thenable<void> {
-		throw new Error('File system is readonly.');
-	}
+    delete(uri: Uri, options: { recursive: boolean }): void | Thenable<void> {
+        throw new Error('File system is readonly.')
+    }
 
-	delete(uri: Uri, options: { recursive: boolean; }): void | Thenable<void> {
-		throw new Error('File system is readonly.');
-	}
-
-	rename(oldUri: Uri, newUri: Uri, options: { overwrite: boolean; }): void | Thenable<void> {
-		throw new Error('File system is readonly.');
-	}
+    rename(
+        oldUri: Uri,
+        newUri: Uri,
+        options: { overwrite: boolean }
+    ): void | Thenable<void> {
+        throw new Error('File system is readonly.')
+    }
 }
