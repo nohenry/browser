@@ -1,7 +1,7 @@
 use crate::{
     ast::{StyleStatement, Value},
     parser::Parser,
-    token::{Operator, Range, Token},
+    token::{Operator, Range, SpannedToken, Token},
 };
 
 impl Parser {
@@ -35,7 +35,14 @@ impl Parser {
 
     fn parse_style_element(&self) -> Option<StyleStatement> {
         let key = match self.tokens.peek() {
-            Some(Token::Ident(_)) => self.tokens.next(),
+            Some(Token::Ident(_)) => self.tokens.next().cloned(),
+            Some(Token::Text(_)) => {
+                if let Some(SpannedToken(span, Token::Text(i))) = self.tokens.next() {
+                    Some(SpannedToken::new(Token::Ident(i.clone()), span.clone()))
+                } else {
+                    None
+                }
+            }
             _ => None,
         };
 
@@ -44,7 +51,7 @@ impl Parser {
         let value = self.parse_value();
 
         Some(StyleStatement::StyleElement {
-            key: key.cloned(),
+            key: key,
             colon: colon.cloned(),
             value,
         })

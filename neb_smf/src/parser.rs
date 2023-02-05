@@ -31,7 +31,7 @@ impl Parser {
     pub fn parse(&self) -> Option<Vec<Statement>> {
         let mut statements = Vec::new();
         self.ignore_ws();
-        while let Some(stmt) = self.parse_statement() {
+        while let Some(stmt) = self.parse_statement(false) {
             statements.push(stmt);
 
             if let Some(Token::Newline) = self.tokens.peek() {
@@ -43,7 +43,7 @@ impl Parser {
         Some(statements)
     }
 
-    pub fn parse_statement(&self) -> Option<Statement> {
+    pub fn parse_statement(&self, in_view: bool) -> Option<Statement> {
         let tok = match self.tokens.peek() {
             Some(Token::Ident(s)) if s == "use" => {
                 if let Some(us) = self.parse_use() {
@@ -53,13 +53,14 @@ impl Parser {
                 }
             }
             Some(Token::Ident(_)) => self.tokens.next(),
-            Some(Token::Text(_)) => {
+            Some(Token::Text(_)) if in_view => {
                 let Some(tok) = self.tokens.next() else {
                     return None;
                 };
 
                 return Some(Statement::Text(tok.clone()));
             }
+            Some(Token::Text(_)) => self.tokens.next(),
             _ => None,
         };
 
@@ -131,8 +132,13 @@ impl Parser {
                     vec![]
                 }
                 _ => {
+                    let view = if let Some(SpannedToken(_, Token::Ident(s))) = ident {
+                        s == "view"
+                    } else {
+                        false
+                    };
                     let mut statements = Vec::new();
-                    while let Some(stmt) = self.parse_statement() {
+                    while let Some(stmt) = self.parse_statement(view) {
                         statements.push(stmt);
                         if let Some(Token::Operator(Operator::CloseBrace)) = self.tokens.peek() {
                             break;

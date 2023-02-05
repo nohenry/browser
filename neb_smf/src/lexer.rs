@@ -12,7 +12,7 @@ impl Lexer {
 
         let mut str_index: Option<(usize, usize)> = None;
 
-        let mut tokens = Vec::new();
+        let mut tokens: Vec<SpannedToken> = Vec::new();
         while start_index < input.len() && end_index <= input.len() {
             let sub_str = &input[start_index..end_index];
             let next = input.chars().nth(end_index);
@@ -24,17 +24,18 @@ impl Lexer {
                         if let Some(indicies) = str_index {
                             let st = &input[indicies.1..end_index - 1];
                             if verify_text(st) {
-                                tokens.truncate(indicies.0);
 
                                 let token = SpannedToken::new(
                                     Token::Text(st.to_string()),
                                     Span {
-                                        line_num,
-                                        position,
-                                        length: (end_index - start_index) as u32,
+                                        line_num: tokens[indicies.0 as usize].span().line_num,
+                                        position: tokens[indicies.0 as usize].span().position,
+                                        length: ((end_index - 1) - indicies.1) as u32,
                                         token_index: tokens.len() as u32,
                                     },
                                 );
+
+                                tokens.truncate(indicies.0);
 
                                 tokens.push(token);
                             }

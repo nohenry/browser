@@ -180,7 +180,7 @@ impl Backend {
                     0,
                 );
             }
-            Value::Float(_, tok) => {
+            Value::Float(_, _, tok) => {
                 builder.push(
                     tok.span().line_num,
                     tok.span().position,
@@ -189,7 +189,7 @@ impl Backend {
                     0,
                 );
             }
-            Value::Integer(_, tok) => {
+            Value::Integer(_, _, tok) => {
                 builder.push(
                     tok.span().line_num,
                     tok.span().position,
@@ -322,6 +322,7 @@ impl Backend {
                 for (i, st) in body.iter().enumerate() {
                     scope_index.push(i);
                     self.recurse(module, &st, scope_index, builder);
+                    println!("st: {:?} {}", token.as_ref().unwrap().1, body.len());
                     scope_index.truncate(scope_index.len() - 1);
                 }
             }
@@ -373,6 +374,7 @@ impl Backend {
                 });
             }
             Statement::Text(txt) => {
+                println!("text {:?}", txt.span());
                 builder.push(
                     txt.span().line_num,
                     txt.span().position,
@@ -387,7 +389,7 @@ impl Backend {
     fn bsearch_value_with_key(
         &self,
         key: &SpannedToken,
-        _span: &Span,
+        span: &Span,
     ) -> Option<Vec<CompletionItem>> {
         if let SpannedToken(_, Token::Ident(key_str)) = key {
             let member = self.style_enum.get(key_str);
@@ -415,6 +417,90 @@ impl Backend {
                             .collect(),
                     );
                 }
+                Some(CompletionType::Color) => {
+                    let spn = Range {
+                        start: Position {
+                            line: span.line_num,
+                            character: span.position,
+                        },
+                        end: Position {
+                            line: span.line_num,
+                            character: span.position + 1,
+                        },
+                    };
+                    let items = [
+                        CompletionItem {
+                            label: "rgb".to_string(),
+                            kind: Some(CompletionItemKind::FUNCTION),
+                            insert_text_format: Some(InsertTextFormat::SNIPPET),
+                            text_edit: Some(CompletionTextEdit::Edit(TextEdit::new(
+                                spn,
+                                "rgb(${1:255}, ${2:0}, ${3:0})$0".to_string(),
+                            ))),
+                            ..Default::default()
+                        },
+                        CompletionItem {
+                            label: "rgba".to_string(),
+                            kind: Some(CompletionItemKind::FUNCTION),
+                            insert_text_format: Some(InsertTextFormat::SNIPPET),
+                            text_edit: Some(CompletionTextEdit::Edit(TextEdit::new(
+                                spn,
+                                "rgba(${1:255}, ${2:0}, ${3:0}, ${4:255})$0".to_string(),
+                            ))),
+                            ..Default::default()
+                        },
+                    ]
+                    .to_vec();
+
+                    return Some(items);
+                }
+                Some(CompletionType::Rect) => {
+                    let spn = Range {
+                        start: Position {
+                            line: span.line_num,
+                            character: span.position,
+                        },
+                        end: Position {
+                            line: span.line_num,
+                            character: span.position + 1,
+                        },
+                    };
+                    let items = [
+                        CompletionItem {
+                            label: "rect".to_string(),
+                            kind: Some(CompletionItemKind::FUNCTION),
+                            insert_text_format: Some(InsertTextFormat::SNIPPET),
+                            text_edit: Some(CompletionTextEdit::Edit(TextEdit::new(
+                                spn,
+                                "rect(${1}, ${2}, ${3}, ${4})".to_string(),
+                            ))),
+                            ..Default::default()
+                        },
+                        CompletionItem {
+                            label: "rect_xy".to_string(),
+                            kind: Some(CompletionItemKind::FUNCTION),
+                            insert_text_format: Some(InsertTextFormat::SNIPPET),
+                            text_edit: Some(CompletionTextEdit::Edit(TextEdit::new(
+                                spn,
+                                "rect_xy(${1}, ${2})$0".to_string(),
+                            ))),
+                            ..Default::default()
+                        },
+                        CompletionItem {
+                            label: "rect_all".to_string(),
+                            kind: Some(CompletionItemKind::FUNCTION),
+                            insert_text_format: Some(InsertTextFormat::SNIPPET),
+                            text_edit: Some(CompletionTextEdit::Edit(TextEdit::new(
+                                spn,
+                                "rect_all(${1})$0".to_string(),
+                            ))),
+                            ..Default::default()
+                        },
+                    ]
+                    .to_vec();
+
+                    return Some(items);
+                }
                 _ => (),
             }
         } else {
@@ -423,6 +509,7 @@ impl Backend {
     }
 
     fn bsearch_style(&self, item: &StyleStatement, span: &Span) -> Option<Vec<CompletionItem>> {
+        println!("Style");
         match item {
             StyleStatement::Style {
                 body, body_range, ..
@@ -600,13 +687,13 @@ impl Backend {
 #[tower_lsp::async_trait]
 impl LanguageServer for Backend {
     async fn initialize(&self, _p: InitializeParams) -> Result<InitializeResult> {
-        self.client.log_message(MessageType::INFO, "potato").await;
         Ok(InitializeResult {
             capabilities: ServerCapabilities {
                 text_document_sync: Some(TextDocumentSyncCapability::Kind(
-                    TextDocumentSyncKind::INCREMENTAL,
+                    // TextDocumentSyncKind::INCREMENTAL,
+                    TextDocumentSyncKind::FULL,
                 )),
-                color_provider: Some(ColorProviderCapability::Simple(true)),
+                // color_provider: Some(ColorProviderCapability::Simple(true)),
                 semantic_tokens_provider: Some(
                     SemanticTokensServerCapabilities::SemanticTokensOptions(
                         SemanticTokensOptions {
@@ -733,143 +820,143 @@ impl LanguageServer for Backend {
         Ok(params)
     }
 
-    async fn document_color(&self, params: DocumentColorParams) -> Result<Vec<ColorInformation>> {
-        println!("Params: {:?}", params);
+    // async fn document_color(&self, params: DocumentColorParams) -> Result<Vec<ColorInformation>> {
+    //     println!("Params: {:?}", params);
 
-        let res = {
-            let map = &*self.documents.read().unwrap();
-            let Some(mods) = map.get(&params.text_document.uri) else {
-                return Ok(vec![])
-            };
+    //     let res = {
+    //         let map = &*self.documents.read().unwrap();
+    //         let Some(mods) = map.get(&params.text_document.uri) else {
+    //             return Ok(vec![])
+    //         };
 
-            let color_info = Vec::new();
-            let md = ModuleDescender::new(color_info).with_on_value(|key, val, ud| {
-                match val {
-                    Value::Function {
-                        ident: Some(SpannedToken(spn, Token::Ident(id))),
-                        args,
-                    } => match id.as_str() {
-                        "rgb" => {
-                            let args: Option<Vec<&Value>> = args.iter_items().map(|val| val.value.as_ref()).collect();
-                            let Some(args) = args else {
-                                return ud;
-                            };
-                            let [Value::Integer(r, _), Value::Integer(g, _), Value::Integer(b, _)] = &args[..] else {
-                                return ud;
-                            };
-                            return ud.into_iter().chain([
-                                ColorInformation {
-                                    color: Color { red: *r as f32 / 255.0, green: *g as f32 / 255.0, blue: *b as f32 / 255.0, alpha: 1.0 },
-                                    range: Range::new(Position { line: spn.line_num, character: spn.position }, Position { line: spn.line_num, character: spn.position + 1 })
-                                }
-                            ].into_iter()).collect();
-                        }
-                        _ => (),
-                    },
-                    _ => (),
-                }
-                ud
-            });
+    //         let color_info = Vec::new();
+    //         let md = ModuleDescender::new(color_info).with_on_value(|key, val, ud| {
+    //             match val {
+    //                 Value::Function {
+    //                     ident: Some(SpannedToken(spn, Token::Ident(id))),
+    //                     args,
+    //                 } => match id.as_str() {
+    //                     "rgb" => {
+    //                         let args: Option<Vec<&Value>> = args.iter_items().map(|val| val.value.as_ref()).collect();
+    //                         let Some(args) = args else {
+    //                             return ud;
+    //                         };
+    //                         let [Value::Integer(r, _, _), Value::Integer(g, _), Value::Integer(b, _)] = &args[..] else {
+    //                             return ud;
+    //                         };
+    //                         return ud.into_iter().chain([
+    //                             ColorInformation {
+    //                                 color: Color { red: *r as f32 / 255.0, green: *g as f32 / 255.0, blue: *b as f32 / 255.0, alpha: 1.0 },
+    //                                 range: Range::new(Position { line: spn.line_num, character: spn.position }, Position { line: spn.line_num, character: spn.position + 1 })
+    //                             }
+    //                         ].into_iter()).collect();
+    //                     }
+    //                     _ => (),
+    //                 },
+    //                 _ => (),
+    //             }
+    //             ud
+    //         });
 
-            let color_info = md.descend(&mods.stmts);
+    //         let color_info = md.descend(&mods.stmts);
 
-            return Ok(color_info);
-        };
-    }
+    //         return Ok(color_info);
+    //     };
+    // }
 
-    async fn color_presentation(
-        &self,
-        params: ColorPresentationParams,
-    ) -> Result<Vec<ColorPresentation>> {
-        println!("Params: {:?}", params);
+    // async fn color_presentation(
+    //     &self,
+    //     params: ColorPresentationParams,
+    // ) -> Result<Vec<ColorPresentation>> {
+    //     println!("Params: {:?}", params);
 
-        let map = &*self.documents.read().unwrap();
-        let Some(mods) = map.get(&params.text_document.uri) else {
-                return Ok(vec![])
-            };
+    //     let map = &*self.documents.read().unwrap();
+    //     let Some(mods) = map.get(&params.text_document.uri) else {
+    //             return Ok(vec![])
+    //         };
 
-        let Color {
-            red,
-            green,
-            blue,
-            alpha,
-        } = params.color;
+    //     let Color {
+    //         red,
+    //         green,
+    //         blue,
+    //         alpha,
+    //     } = params.color;
 
-        let color_info = Vec::new();
-        let md = ModuleDescender::new(color_info).with_on_value(move |key, val, ud| {
-            match val {
-                Value::Function {
-                    ident: Some(SpannedToken(spn, Token::Ident(id))),
-                    args,
-                } => match id.as_str() {
-                    "rgb" => {
-                        let Position {
-                            line: sl,
-                            character: sc,
-                        } = params.range.start;
-                        let Position {
-                            line: el,
-                            character: ec,
-                        } = params.range.end;
+    //     let color_info = Vec::new();
+    //     let md = ModuleDescender::new(color_info).with_on_value(move |key, val, ud| {
+    //         match val {
+    //             Value::Function {
+    //                 ident: Some(SpannedToken(spn, Token::Ident(id))),
+    //                 args,
+    //             } => match id.as_str() {
+    //                 "rgb" => {
+    //                     let Position {
+    //                         line: sl,
+    //                         character: sc,
+    //                     } = params.range.start;
+    //                     let Position {
+    //                         line: el,
+    //                         character: ec,
+    //                     } = params.range.end;
 
-                        let text_edit = if sl == spn.line_num
-                            && sc == spn.position
-                            && el == spn.line_num
-                            && ec == spn.position + 1
-                        {
-                            let rng = args.get_range();
-                            Some(TextEdit {
-                                range: Range {
-                                    start: Position {
-                                        line: rng.start.line_num,
-                                        character: rng.start.position,
-                                    },
-                                    end: Position {
-                                        line: rng.end.line_num,
-                                        character: rng.end.position + rng.end.length,
-                                    },
-                                },
-                                new_text: format!(
-                                    "({}, {}, {})",
-                                    (red * 255.0) as u32,
-                                    (green * 255.0) as u32,
-                                    (blue * 255.0) as u32
-                                ),
-                            })
-                        } else {
-                            None
-                        };
+    //                     let text_edit = if sl == spn.line_num
+    //                         && sc == spn.position
+    //                         && el == spn.line_num
+    //                         && ec == spn.position + 1
+    //                     {
+    //                         let rng = args.get_range();
+    //                         Some(TextEdit {
+    //                             range: Range {
+    //                                 start: Position {
+    //                                     line: rng.start.line_num,
+    //                                     character: rng.start.position,
+    //                                 },
+    //                                 end: Position {
+    //                                     line: rng.end.line_num,
+    //                                     character: rng.end.position + rng.end.length,
+    //                                 },
+    //                             },
+    //                             new_text: format!(
+    //                                 "({}, {}, {})",
+    //                                 (red * 255.0) as u32,
+    //                                 (green * 255.0) as u32,
+    //                                 (blue * 255.0) as u32
+    //                             ),
+    //                         })
+    //                     } else {
+    //                         None
+    //                     };
 
-                        return ud
-                            .into_iter()
-                            .chain(
-                                [ColorPresentation {
-                                    label: id.clone(),
-                                    text_edit,
-                                    additional_text_edits: None,
-                                }]
-                                .into_iter(),
-                            )
-                            .collect();
-                    }
-                    _ => (),
-                },
-                _ => (),
-            }
-            ud
-        });
+    //                     return ud
+    //                         .into_iter()
+    //                         .chain(
+    //                             [ColorPresentation {
+    //                                 label: id.clone(),
+    //                                 text_edit,
+    //                                 additional_text_edits: None,
+    //                             }]
+    //                             .into_iter(),
+    //                         )
+    //                         .collect();
+    //                 }
+    //                 _ => (),
+    //             },
+    //             _ => (),
+    //         }
+    //         ud
+    //     });
 
-        let color_info = md.descend(&mods.stmts);
-        println!("{:?}", color_info);
+    //     let color_info = md.descend(&mods.stmts);
+    //     println!("{:?}", color_info);
 
-        return Ok(color_info);
+    //     return Ok(color_info);
 
-        Ok(vec![ColorPresentation {
-            label: "fsdlkf".to_string(),
-            text_edit: None,
-            additional_text_edits: None,
-        }])
-    }
+    //     Ok(vec![ColorPresentation {
+    //         label: "fsdlkf".to_string(),
+    //         text_edit: None,
+    //         additional_text_edits: None,
+    //     }])
+    // }
 
     async fn initialized(&self, _p: InitializedParams) {
         self.client
@@ -895,55 +982,55 @@ impl LanguageServer for Backend {
 
         let doc = params.text_document;
         for change in params.content_changes {
-            if let Some(range) = change.range {
-                let map = &mut *self.documents.write().unwrap();
-                let Some(mods) = map.get_mut(&doc.uri) else {
-                    return;
-                };
+            // if let Some(range) = change.range {
+            //     let map = &mut *self.documents.write().unwrap();
+            //     let Some(mods) = map.get_mut(&doc.uri) else {
+            //         return;
+            //     };
 
-                let md = MutModuleDescender::new(false)
-                    .with_callback_first(false)
-                    .with_on_value(move |key, val, ud| {
-                        let rng = val.get_range();
-                        let rng = to_rng(&rng);
+            //     let md = MutModuleDescender::new(false)
+            //         .with_callback_first(false)
+            //         .with_on_value(move |key, val, ud| {
+            //             let rng = val.get_range();
+            //             let rng = to_rng(&rng);
 
-                        // if rng == range {}
-                        if range_contains(&range, &rng) {
-                            println!("Contains");
-                        }
-                        println!("Value: {:?}", val);
-                        println!("Content: {:?} {:?}", rng, range);
+            //             // if rng == range {}
+            //             if range_contains(&range, &rng) {
+            //                 println!("Contains");
+            //             }
+            //             println!("Value: {:?}", val);
+            //             println!("Content: {:?} {:?}", rng, range);
 
-                        ud
-                    })
-                    .with_on_style_statement(move |stmt, ud| {
-                        let rng = stmt.get_range();
-                        let rng = to_rng(&rng);
+            //             ud
+            //         })
+            //         .with_on_style_statement(move |stmt, ud| {
+            //             let rng = stmt.get_range();
+            //             let rng = to_rng(&rng);
 
-                        if range_contains(&range, &rng) {
-                            println!("Contains");
-                        }
-                        // println!("Statent: {:?}", val);
-                        println!("Statemnt : {:?} {:?}", rng, range);
+            //             if range_contains(&range, &rng) {
+            //                 println!("Contains");
+            //             }
+            //             // println!("Statent: {:?}", val);
+            //             println!("Statemnt : {:?} {:?}", rng, range);
 
-                        (ud, ud)
-                    });
+            //             (ud, ud)
+            //         });
 
-                let _ = md.descend(&mut mods.stmts);
-            } else {
-                let text = change.text;
+            //     let _ = md.descend(&mut mods.stmts);
+            // } else {
+            let text = change.text;
 
-                let out = neb_smf::Module::parse_str(&text);
-                println!("{}", out.0.format());
+            let out = neb_smf::Module::parse_str(&text);
+            println!("{}", out.0.format());
 
-                for err in out.1 {
-                    self.client.log_message(MessageType::ERROR, err).await;
-                }
-
-                (*(self.documents.write().unwrap())).insert(doc.uri.clone(), out.0);
-
-                self.client.semantic_tokens_refresh().await.unwrap();
+            for err in out.1 {
+                self.client.log_message(MessageType::ERROR, err).await;
             }
+
+            (*(self.documents.write().unwrap())).insert(doc.uri.clone(), out.0);
+
+            self.client.semantic_tokens_refresh().await.unwrap();
+            // }
         }
 
         // let mut p = params.content_changes;
@@ -972,6 +1059,9 @@ pub enum CompletionType {
     Boolean,
     Symbol(Box<CompletionType>),
     Style,
+    Color,
+    Rect,
+    Unknown,
 }
 
 #[tokio::main]
@@ -1000,14 +1090,25 @@ async fn main() {
             style_enum: HashMap::from([
                 (
                     "direction".to_string(),
-                    CompletionType::Enum(vec!["Vertical".to_string(), "Horizontal".to_string()]),
+                    CompletionType::Enum(vec![
+                        "Vertical".to_string(),
+                        "Horizontal".to_string(),
+                        "VerticalReverse".to_string(),
+                        "HorizontalReverse".to_string(),
+                    ]),
                 ),
                 ("visible".to_string(), CompletionType::Boolean),
                 (
                     "class".to_string(),
                     CompletionType::Symbol(Box::new(CompletionType::Style)),
                 ),
-                ("color".to_string(), CompletionType::Boolean),
+                ("backgroundColor".to_string(), CompletionType::Color),
+                ("foregroundColor".to_string(), CompletionType::Color),
+                ("borderColor".to_string(), CompletionType::Color),
+                ("borderWidth".to_string(), CompletionType::Rect),
+                ("padding".to_string(), CompletionType::Rect),
+                ("radius".to_string(), CompletionType::Rect),
+                ("gap".to_string(), CompletionType::Unknown),
             ]),
             documents: RwLock::new(HashMap::new()),
             client: client.clone(),

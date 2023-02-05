@@ -3,11 +3,14 @@ setup {
         centered {
             gap: 40px
             padding: rect_all(10px)
+            direction: VerticalReverse
         }
 
         item {
             backgroundColor: rgb(200, 10, 10)
             padding: rect_all(50px)
+            borderColor: rgba(255, 0, 0, 255)
+            radius: rect(20, 40, 50, 4)
         }
     }
 }

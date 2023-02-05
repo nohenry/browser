@@ -154,6 +154,80 @@ impl Module {
                     func: Box::new(|vals| Some(Value::Tuple(vals))),
                 },
             );
+
+            Symbol::insert(
+                &mods,
+                "rgba",
+                SymbolKind::Function {
+                    args: vec![Type::Integer, Type::Integer, Type::Integer, Type::Integer],
+                    return_type: Type::Tuple(vec![
+                        Type::Integer,
+                        Type::Integer,
+                        Type::Integer,
+                        Type::Integer,
+                    ]),
+                    func: Box::new(|vals| Some(Value::Tuple(vals))),
+                },
+            );
+
+            Symbol::insert(
+                &mods,
+                "rect",
+                SymbolKind::Function {
+                    args: vec![Type::Integer, Type::Integer, Type::Integer, Type::Integer],
+                    return_type: Type::Tuple(vec![
+                        Type::Integer,
+                        Type::Integer,
+                        Type::Integer,
+                        Type::Integer,
+                    ]),
+                    func: Box::new(|vals| Some(Value::Tuple(vals))),
+                },
+            );
+
+            Symbol::insert(
+                &mods,
+                "rect_xy",
+                SymbolKind::Function {
+                    args: vec![Type::Integer, Type::Integer],
+                    return_type: Type::Tuple(vec![
+                        Type::Integer,
+                        Type::Integer,
+                        Type::Integer,
+                        Type::Integer,
+                    ]),
+                    func: Box::new(|vals| {
+                        Some(Value::Tuple(vec![
+                            vals[0].clone(),
+                            vals[1].clone(),
+                            vals[0].clone(),
+                            vals[1].clone(),
+                        ]))
+                    }),
+                },
+            );
+
+            Symbol::insert(
+                &mods,
+                "rect_all",
+                SymbolKind::Function {
+                    args: vec![Type::Integer],
+                    return_type: Type::Tuple(vec![
+                        Type::Integer,
+                        Type::Integer,
+                        Type::Integer,
+                        Type::Integer,
+                    ]),
+                    func: Box::new(|vals| {
+                        Some(Value::Tuple(vec![
+                            vals[0].clone(),
+                            vals[0].clone(),
+                            vals[0].clone(),
+                            vals[0].clone(),
+                        ]))
+                    }),
+                },
+            );
         }
 
         println!("Mods {}", mods.format());
