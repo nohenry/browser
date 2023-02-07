@@ -564,7 +564,7 @@ impl Element {
         };
 
         // Set the content bounds. This is used for drawing a background for the content with a border
-        get_id_mgr().set_layout_content(self.id, bounds);
+        get_id_mgr().set_layout_content(node.element.id, bounds);
 
         let bounds = if let Some(border) = border_width {
             Rect::new(
@@ -578,7 +578,7 @@ impl Element {
         };
 
         // Set the border bounds; the physical area that the border takes up. This bounds is used or drawing the border color
-        get_id_mgr().set_layout_border(self.id, bounds);
+        get_id_mgr().set_layout_border(node.element.id, bounds);
 
         bounds
     }

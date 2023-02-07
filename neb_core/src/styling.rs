@@ -188,17 +188,17 @@ impl StyleValue {
                                 }
                                 ("direction", "Horizontal") => {
                                     return StyleValue::Direction {
-                                        direction: Direction::Vertical,
+                                        direction: Direction::Horizontal,
                                     }
                                 }
                                 ("direction", "VerticalReverse") => {
                                     return StyleValue::Direction {
-                                        direction: Direction::Vertical,
+                                        direction: Direction::VerticalReverse,
                                     }
                                 }
                                 ("direction", "HorizontalReverse") => {
                                     return StyleValue::Direction {
-                                        direction: Direction::Vertical,
+                                        direction: Direction::HorizontalReverse,
                                     }
                                 }
                                 _ => (),
