@@ -156,6 +156,8 @@ impl Lexer {
         if input.len() == 1 {
             // match single character symbols
             match input.chars().nth(0) {
+                Some('[') => return Some(Token::Operator(Operator::OpenSquare)),
+                Some(']') => return Some(Token::Operator(Operator::CloseSquare)),
                 Some('(') => return Some(Token::Operator(Operator::OpenParen)),
                 Some(')') => return Some(Token::Operator(Operator::CloseParen)),
                 Some('{') => return Some(Token::Operator(Operator::OpenBrace)),

@@ -5,6 +5,8 @@ use neb_util::format::{NodeDisplay, TreeDisplay};
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum Operator {
+    OpenSquare,
+    CloseSquare,
     OpenParen,
     CloseParen,
     OpenBrace,
@@ -17,6 +19,8 @@ pub enum Operator {
 impl Operator {
     pub fn as_str(&self) -> &str {
         match self {
+            Self::OpenSquare => "`[`",
+            Self::CloseSquare => "`]`",
             Self::OpenParen => "`(`",
             Self::CloseParen => "`)`",
             Self::OpenBrace => "`{`",

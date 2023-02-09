@@ -1,12 +1,26 @@
 setup {
     style {
         centered {
-            direction: Horizontal
+            padding: rect_all(80px)
+            direction: Vertical
+            gap: 80px
         }
 
         item {
-            backgroundColor: rgb(200, 10, 10)
+            padding: rect_xy(20px, 4px)
+            foregroundColor: rgb(255, 255, 255)
+            textAlign: Center
+        }
+
+        left {
+            backgroundColor: rgb(59, 59, 61)
             radius: rect(20px, 40px, 50px, 4px)
+        }
+
+        right {
+            backgroundColor: rgb(11, 132, 255)
+            radius: rect(40px, 20px, 4px, 50px)
+            align: Right
         }
     }
 }
@@ -14,11 +28,32 @@ setup {
 use setup.style
 
 view (class: centered) {
-    view (class: item) {
-        First Item 
+    view (class: [left, item]) {
+        Hello
     }
 
-    view (class: item) {
-        Second Item
+    view (class: [right, item]) {
+        Hi how are you
+    }
+
+    view (class: [left, item]) {
+        What time will you be home
+    }
+
+    view (class: [right, item]) {
+        I do not know yet
+    }
+
+    view (class: [left, item]) {
+        Well please let me know as soon as possible
+    }
+
+
+    view (class: [right, item]) {
+        Ok
+    }
+
+    view (class: [right, item]) {
+        probably in like ten minutes
     }
 }

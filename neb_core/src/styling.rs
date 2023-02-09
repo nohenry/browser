@@ -17,8 +17,21 @@ pub enum Direction {
     HorizontalReverse,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub enum Align {
+    Center,
+    Left,
+    Right,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum ChildSizing {
+    Match,
+    Individual,
+}
+
 lazy_static::lazy_static! {
-    static ref INHERITED: HashSet<&'static str> = HashSet::from(["foregroundColor"]);
+    static ref INHERITED: HashSet<&'static str> = HashSet::from(["textAlign"]);
 }
 
 pub fn is_inherited(key: &str) -> bool {
@@ -39,6 +52,10 @@ pub enum StyleValue {
     Padding { rect: UnitRect },
     Radius { rect: UnitRect },
     Direction { direction: Direction },
+
+    TextAlign { horizontal: Align },
+    Align { horizontal: Align },
+    ChildSizing { sizing: ChildSizing },
 
     Empty,
 }
@@ -181,6 +198,46 @@ impl StyleValue {
                         }
                         Value::Ident(SpannedToken(_, Token::Ident(id))) => {
                             match (prop_key, id.as_str()) {
+                                ("childSizing", "Match") => {
+                                    return StyleValue::ChildSizing {
+                                        sizing: ChildSizing::Match,
+                                    }
+                                }
+                                ("childSizing", "Individual") => {
+                                    return StyleValue::ChildSizing {
+                                        sizing: ChildSizing::Individual,
+                                    }
+                                }
+                                ("align", "Center") => {
+                                    return StyleValue::Align {
+                                        horizontal: Align::Center,
+                                    }
+                                }
+                                ("align", "Left") => {
+                                    return StyleValue::Align {
+                                        horizontal: Align::Left,
+                                    }
+                                }
+                                ("align", "Right") => {
+                                    return StyleValue::Align {
+                                        horizontal: Align::Right,
+                                    }
+                                }
+                                ("textAlign", "Center") => {
+                                    return StyleValue::TextAlign {
+                                        horizontal: Align::Center,
+                                    }
+                                }
+                                ("textAlign", "Left") => {
+                                    return StyleValue::TextAlign {
+                                        horizontal: Align::Left,
+                                    }
+                                }
+                                ("textAlign", "Right") => {
+                                    return StyleValue::TextAlign {
+                                        horizontal: Align::Right,
+                                    }
+                                }
                                 ("direction", "Vertical") => {
                                     return StyleValue::Direction {
                                         direction: Direction::Vertical,
@@ -270,6 +327,27 @@ macro_rules! StyleValueAs {
       StyleValue::Direction {
         direction
       } => Some((direction)),_ => None,
+    }
+  };
+ ($e:expr,TextAlgin) => {
+    match$e {
+      StyleValue::TextAlign {
+        horizontal
+      } => Some((horizontal)),_ => None,
+    }
+  };
+ ($e:expr,ChildSizing) => {
+    match$e {
+      StyleValue::ChildSizing{
+       sizing
+      } => Some((sizing)),_ => None,
+    }
+  };
+ ($e:expr,Align) => {
+    match$e {
+      StyleValue::Align{
+       horizontal
+      } => Some((horizontal)),_ => None,
     }
   };
 }

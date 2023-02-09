@@ -1,5 +1,6 @@
 use crate::{
-    ast::{StyleStatement, Value},
+    ast::{PunctuationList, StyleStatement, Value},
+    error::{ParseError, ParseErrorKind},
     parser::Parser,
     token::{Operator, Range, SpannedToken, Token},
 };
@@ -57,8 +58,60 @@ impl Parser {
         })
     }
 
+    pub fn parse_array(&self) -> Option<Value> {
+        let open = self.expect_operator(Operator::OpenSquare);
+
+        let args = match self.tokens.peek() {
+            Some(Token::Operator(Operator::CloseParen)) => PunctuationList::new(),
+            _ => {
+                let mut args = PunctuationList::new();
+
+                while let Some(arg) = self.parse_value() {
+                    let comma = if let Some(Token::Operator(Operator::Comma)) = self.tokens.peek() {
+                        self.tokens.next().cloned()
+                    } else {
+                        None
+                    };
+                    if let Some(Token::Operator(Operator::CloseSquare)) = self.tokens.peek() {
+                        args.push(arg, comma);
+                        break;
+                    }
+                    if comma.is_none() {
+                        self.add_error(ParseError {
+                            kind: ParseErrorKind::InvalidSyntax(format!(
+                                "Expected comma in arguments!"
+                            )),
+                            range: Range::default(),
+                        });
+                    }
+                    args.push_sep(arg, comma.unwrap());
+                }
+                args
+            }
+        };
+
+        let close = self.expect_operator(Operator::CloseSquare);
+
+        if let (Some(open), Some(close)) = (open, close) {
+            Some(Value::Array {
+                values: args,
+                range: Range::from((open.0, close.0)),
+            })
+        } else {
+            self.add_error(ParseError {
+                kind: ParseErrorKind::InvalidSyntax(format!("Unable to parse arg brackets!")),
+                range: Range::default(),
+            });
+            Some(Value::Array {
+                values: args,
+                range: Range::default(),
+            })
+        }
+    }
+
     pub fn parse_value(&self) -> Option<Value> {
         match self.tokens.peek() {
+            Some(Token::Operator(Operator::OpenSquare)) => self.parse_array(),
             Some(Token::Integer(i, u)) => {
                 Some(Value::Integer(*i, *u, self.tokens.next().cloned().unwrap()))
             }

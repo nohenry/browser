@@ -13,7 +13,11 @@ use neb_smf::{
     token::{SpannedToken, Token},
 };
 
-use crate::{rectr::RoundedRect, styling::Direction, StyleValueAs};
+use crate::{
+    rectr::RoundedRect,
+    styling::{Align, ChildSizing, Direction},
+    StyleValueAs,
+};
 
 use crate::{
     defaults,
@@ -212,26 +216,40 @@ impl Node {
     }
 
     pub fn styles(&self, document: &Document, key: &str) -> StyleValue {
-        // let symbol = symbol.borrow();
         let class = match &self.ty {
             NodeType::View { args } => args.get("class"),
             _ => None,
         };
-        // let Some(styles) = document.get_styles() else {
-        //     return StyleValue::Empty
-        // };
-        // let styles = styles.borrow();
-        if let Some(Value::Ident(SpannedToken(_, Token::Ident(s)))) = class {
-            let parent = self.parent.as_ref().unwrap().borrow();
-            let Some(symbol) = parent.symbol_in_scope(document, s) else {
-                return StyleValue::Empty
-            };
-            // let Some(styles) = styles.children.get(s) else {
-            // };
 
-            let sym = symbol.borrow();
+        match class {
+            Some(Value::Ident(SpannedToken(_, Token::Ident(s)))) => {
+                let parent = self.parent.as_ref().unwrap().borrow();
+                let Some(symbol) = parent.symbol_in_scope(document, s) else {
+                    return StyleValue::Empty
+                };
 
-            return StyleValue::from_symbol(&sym, key);
+                let sym = symbol.borrow();
+
+                return StyleValue::from_symbol(&sym, key);
+            }
+            Some(Value::Array { values, .. }) => {
+                for val in values.iter_items() {
+                    if let Value::Ident(SpannedToken(_, Token::Ident(s))) = val {
+                        let parent = self.parent.as_ref().unwrap().borrow();
+                        let Some(symbol) = parent.symbol_in_scope(document, s) else {
+                            return StyleValue::Empty
+                        };
+
+                        let sym = symbol.borrow();
+
+                        match StyleValue::from_symbol(&sym, key) {
+                            StyleValue::Empty => continue,
+                            val => return val,
+                        }
+                    }
+                }
+            }
+            _ => (),
         }
 
         StyleValue::Empty
@@ -323,6 +341,9 @@ impl Element {
             StyleValueAs!(node.styles(document, "borderWidth"), BorderWidth)
                 .map(|r| r.try_into().unwrap());
 
+        let child_sizing = StyleValueAs!(node.styles(document, "childSizing"), ChildSizing)
+            .unwrap_or(ChildSizing::Individual);
+
         /*
             The padding and border take up space,
             therefore we have to subtract them from the bounds so that
@@ -364,6 +385,7 @@ impl Element {
                 UnitValue::Pixels(p) => p,
             };
 
+            let mut max_width = 0;
             // Layout each child and add it's requested size to the total area
             for child in node.children.iter() {
                 let node = child.borrow();
@@ -376,6 +398,9 @@ impl Element {
                 let area = Rect::new(bounds.x0, bounds.y0 + rect.height(), bounds.x1, bounds.y1);
 
                 let area = node.element.layout(&node, area, depth + 1, document);
+                if area.width() as i32 > max_width {
+                    max_width = area.width() as i32;
+                }
                 if fit {
                     if area.width() > rect.width() {
                         rect.x1 = rect.x0 + area.width();
@@ -385,6 +410,28 @@ impl Element {
                 // We round height for that pixel perfection 🤤
                 rect.y1 += area.height().round() + gap_pixels as f64
             }
+            if let ChildSizing::Match = child_sizing {
+                for child in node.children.iter() {
+                    let node = child.borrow();
+                    if !node.is_displayed() {
+                        continue;
+                    }
+
+                    let mut manager = get_id_mgr();
+                    let mut layout = *manager.get_layout(node.element.id);
+                    if max_width > layout.content_rect.width() as i32 {
+                        layout.content_rect.x1 +=
+                            (max_width - layout.content_rect.width() as i32) as f64;
+                        layout.border_rect.x1 +=
+                            (max_width - layout.border_rect.width() as i32) as f64;
+                    }
+                    manager.set_layout_content(node.element.id, layout.content_rect);
+                    manager.set_layout_border(node.element.id, layout.border_rect);
+                    // node.element.id
+                    // let area = node.element.layout(&node, rect, depth + 1, document);
+                }
+            }
+
             rect
         };
 
@@ -511,11 +558,14 @@ impl Element {
 
                 let fit = true;
 
-                match direction {
-                    Direction::Vertical => layout_children_vertically(gap, fit),
-                    Direction::VerticalReverse => layout_children_vertically_rev(gap, fit),
-                    Direction::Horizontal => layout_children_horizontally(gap, fit),
-                    Direction::HorizontalReverse => layout_children_horizontally_rev(gap, fit),
+                let align = StyleValueAs!(node.styles(document, "align"), Align);
+
+                match (direction, align) {
+                    (Direction::Vertical, _) => layout_children_vertically(gap, fit),
+                    (Direction::VerticalReverse, _) => layout_children_vertically_rev(gap, fit),
+                    // (Direction::Horizontal, Some(Align::Right)) => layout_children_horizontally_rev(gap, fit),
+                    (Direction::Horizontal, _) => layout_children_horizontally(gap, fit),
+                    (Direction::HorizontalReverse, _) => layout_children_horizontally_rev(gap, fit),
                 }
             }
             // SymbolKind::Node { args }
@@ -529,7 +579,31 @@ impl Element {
             NodeType::Text(t) => {
                 let mut simple_text = simple_text::SimpleText::new();
                 let tl = simple_text.layout(None, psize!(defaults::TEXT_SIZE), t);
-                Rect::from_origin_size((bounds.x0, bounds.y0), (tl.width(), tl.height()))
+
+                
+                let area =
+                    Rect::from_origin_size((bounds.x0, bounds.y0), (tl.width(), tl.height()));
+
+                let area = if let Some(Align::Right) = StyleValueAs!(
+                    node.parent
+                        .as_ref()
+                        .unwrap()
+                        .borrow()
+                        .styles(document, "align"),
+                    Align
+                ) {
+                    Rect::new(bounds.x1 - area.width(), area.y0, bounds.x1, area.y1)
+                } else {
+                    area
+                };
+                // .map(|r| r.try_into().unwrap());
+
+                // let x_offset = match align {
+                //     Some(TextAlign::Center) => tl.width() / 2.0,
+                //     Some(TextAlign::Left) => 0.0,
+                //     _ => 0.0,
+                // };
+                area
             }
             NodeType::Root => {
                 let gap = StyleValueAs!(node.styles(document, "gap"), Gap)
@@ -550,6 +624,13 @@ impl Element {
                 bounds
             }
             _ => Rect::ZERO,
+        };
+
+        let area = if let Some(Align::Right) = StyleValueAs!(node.styles(document, "align"), Align)
+        {
+            Rect::new(bounds.x1 - area.width(), area.y0, bounds.x1, area.y1)
+        } else {
+            area
         };
 
         let bounds = if let Some(padding) = padding {
@@ -587,7 +668,7 @@ impl Element {
         if !node.is_displayed() {
             return;
         }
-        let mut binding = get_id_mgr();
+        let binding = get_id_mgr();
         let layout = binding.get_layout(self.id);
 
         let background_color =
@@ -598,6 +679,13 @@ impl Element {
 
         let foreground_color =
             StyleValueAs!(node.styles(document, "foregroundColor"), ForegroundColor);
+
+        let parent_fg_col = node.parent.as_ref().and_then(|parent| {
+            StyleValueAs!(
+                parent.borrow().styles(document, "foregroundColor"),
+                ForegroundColor
+            )
+        });
 
         let radius = StyleValueAs!(node.styles(document, "radius"), Radius);
 
@@ -698,6 +786,12 @@ impl Element {
             defaults::FOREGROUND_COLOR
         };
 
+        let parent_foreground_color = if let Some(foreground_color) = parent_fg_col {
+            foreground_color
+        } else {
+            foreground_color
+        };
+
         // let node = node.borrow();
 
         match &node.ty {
@@ -744,7 +838,7 @@ impl Element {
                     &mut dctx.builder,
                     None,
                     psize!(defaults::TEXT_SIZE),
-                    Some(&Brush::Solid(foreground_color)),
+                    Some(&Brush::Solid(parent_foreground_color)),
                     Affine::translate((layout.content_rect.x0, layout.content_rect.y0)),
                     t,
                 );

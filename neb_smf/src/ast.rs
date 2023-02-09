@@ -273,6 +273,10 @@ pub enum Value {
         args: ElementArgs,
     },
     Tuple(Vec<Value>),
+    Array {
+        values: PunctuationList<Value>,
+        range: Range,
+    },
 }
 
 impl Value {
@@ -294,6 +298,7 @@ impl AstNode for Value {
                 (Some(s), Some(e)) => Range::from((&s.get_range(), &e.get_range())),
                 _ => Range::default(),
             },
+            Self::Array { range, .. } => range.clone(),
             Self::Integer(_, _, s) => s.0.into(),
             Self::Float(_, _, s) => s.0.into(),
             Self::Ident(s) => s.0.into(),
@@ -319,6 +324,7 @@ impl NodeDisplay for Value {
                 ..
             } => write!(f, "Function {}", i),
             Self::Function { ident: None, .. } => write!(f, "Function"),
+            Self::Array { .. } => f.write_str("Array"),
             _ => panic!(),
         }
     }
@@ -334,13 +340,15 @@ impl TreeDisplay for Value {
     fn num_children(&self) -> usize {
         match self {
             Self::Function { .. } => 1,
+            Self::Array { values, .. } => values.num_children(),
             _ => 0,
         }
     }
 
-    fn child_at(&self, _index: usize) -> Option<&dyn TreeDisplay> {
+    fn child_at(&self, index: usize) -> Option<&dyn TreeDisplay> {
         match self {
             Self::Function { args, .. } => Some(args),
+            Self::Array { values, .. } => values.child_at(index),
             _ => None,
         }
     }
@@ -463,7 +471,7 @@ pub enum Statement {
         body_range: Option<Range>,
         token: Option<SpannedToken>,
     },
-    Text(SpannedToken)
+    Text(SpannedToken),
 }
 
 impl AstNode for Statement {
@@ -561,7 +569,7 @@ impl TreeDisplay for Statement {
                 let ind = switchon!(index, token);
                 args.child_at(index - ind)
             }
-            Self::Text(_) => None
+            Self::Text(_) => None,
         }
     }
 

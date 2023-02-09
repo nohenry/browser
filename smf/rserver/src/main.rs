@@ -216,6 +216,9 @@ impl Backend {
                 self.recurse_args(module, args, scope_index, builder);
             }
             Value::Tuple(_) => (),
+            Value::Array { values, .. } => values
+                .iter_items()
+                .for_each(|item| self.recurse_value(item, module, ctx, scope_index, builder)),
             _ => (),
         }
     }

@@ -17,7 +17,7 @@ pub(crate) fn get_id_mgr() -> MutexGuard<'static, IDManager> {
 
 pub type ID = u64;
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct Layout {
     pub content_rect: Rect,
     pub border_rect: Rect,
@@ -86,7 +86,7 @@ impl IDManager {
         }
     }
 
-    pub fn get_layout(&mut self, id: ID) -> &Layout {
+    pub fn get_layout(&self, id: ID) -> &Layout {
         self.id_mappings.get(&id).unwrap_or(&LAYOUT_ZERO)
     }
 }

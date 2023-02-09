@@ -5,7 +5,7 @@ use neb_graphics::{drawing_context::DrawingContext, vello::kurbo::Rect};
 use neb_smf::{Module, Symbol, SymbolKind};
 use neb_util::{format::TreeDisplay, Rf};
 
-use crate::node::{Node, NodeType};
+use crate::{node::{Node, NodeType}};
 
 pub fn indent(size: usize) -> String {
     const INDENT: &'static str = "    ";
