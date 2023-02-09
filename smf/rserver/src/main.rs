@@ -380,7 +380,7 @@ impl Backend {
                 println!("text {:?}", txt.span());
                 builder.push(
                     txt.span().line_num,
-                    txt.span().position,
+                    txt.span().position + 1,
                     txt.span().length,
                     get_stype_index_from_str("string"),
                     0,

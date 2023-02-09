@@ -4,7 +4,7 @@ use neb_core::document::parse_from_stream;
 
 fn main() {
     env_logger::init();
-    let file = File::open("test_files/new.smf").unwrap();
+    let file = File::open("test_files/messages.smf").unwrap();
     let file = BufReader::new(file);
 
     let document = parse_from_stream(file);

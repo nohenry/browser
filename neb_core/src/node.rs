@@ -580,7 +580,6 @@ impl Element {
                 let mut simple_text = simple_text::SimpleText::new();
                 let tl = simple_text.layout(None, psize!(defaults::TEXT_SIZE), t);
 
-                
                 let area =
                     Rect::from_origin_size((bounds.x0, bounds.y0), (tl.width(), tl.height()));
 

@@ -22,14 +22,13 @@ impl Lexer {
                     Token::Whitespace => position += 1,
                     Token::Newline => {
                         let ce = end_index - 1;
-                        if &input[start_index..end_index+1] == "\r\n" {
+                        if &input[start_index..end_index + 1] == "\r\n" {
                             end_index += 1;
                             // continue;
                         }
                         if let Some(indicies) = str_index {
-                            let st = &input[indicies.1..ce];
+                            let st = &input[indicies.1 + 1..ce];
                             if verify_text(st) {
-
                                 let token = SpannedToken::new(
                                     Token::Text(st.to_string()),
                                     Span {
@@ -62,6 +61,30 @@ impl Lexer {
                             },
                         );
 
+                        // if str_index.is_none()
+                        //     && tokens
+                        //         .last()
+                        //         .map(|c| c.0.line_num < token.0.line_num)
+                        //         .unwrap_or(false)
+                        // {
+                        //     str_index = Some((tokens.len(), start_index));
+                        // }
+
+                        tokens.push(token);
+                        position += (end_index - start_index) as u32;
+                    }
+                    Token::Operator(Operator::Colon) => {
+                        let token = SpannedToken::new(
+                            token,
+                            Span {
+                                line_num,
+                                position,
+                                length: (end_index - start_index) as u32,
+                                token_index: tokens.len() as u32,
+                            },
+                        );
+
+                        // If the token starts at the beginning of a line
                         if str_index.is_none()
                             && tokens
                                 .last()
@@ -70,7 +93,6 @@ impl Lexer {
                         {
                             str_index = Some((tokens.len(), start_index));
                         }
-
                         tokens.push(token);
                         position += (end_index - start_index) as u32;
                     }
@@ -202,7 +224,12 @@ impl Lexer {
         };
 
         // match identifiers
-        if input.chars().find(|c| !(c.is_alphabetic() || *c == '_')).is_none() && del {
+        if input
+            .chars()
+            .find(|c| !(c.is_alphabetic() || *c == '_'))
+            .is_none()
+            && del
+        {
             return Some(Token::Ident(input.to_string()));
         }
 
@@ -215,7 +242,14 @@ impl Lexer {
 }
 
 fn verify_text(st: &str) -> bool {
-    let val = st.chars().find(|c| !(c.is_alphanumeric() || *c == ' '));
+    let val = st.chars().find(|c| {
+        !(match c {
+            ' ' | ',' | '\'' | '"' | '!' | '@' | '#' | '$' | '%' | '^' | '&' | '*' | '(' | ')'
+            | '[' | ']' | '?' | '/' | ';' | ':' | '\\' | '.' | '<' | '>' | '-' | '_' | '+'
+            | '=' => true,
+            c => c.is_alphanumeric(),
+        })
+    });
 
     println!("Val: {:?}", val);
 

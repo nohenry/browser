@@ -1,9 +1,9 @@
 setup {
     style {
         centered {
-            padding: rect_all(80px)
+            padding: rect_all(40px)
             direction: Vertical
-            gap: 80px
+            gap: 40px
         }
 
         item {
@@ -29,31 +29,31 @@ use setup.style
 
 view (class: centered) {
     view (class: [left, item]) {
-        Hello
+        :Hello! I'm oliver (potato)
     }
 
     view (class: [right, item]) {
-        Hi how are you
+        :Hi how are you
     }
 
     view (class: [left, item]) {
-        What time will you be home
+        :What time will you be home
     }
 
     view (class: [right, item]) {
-        I do not know yet
+        :I do not know yet
     }
 
     view (class: [left, item]) {
-        Well please let me know as soon as possible
+        :Well please let me know as soon as possible
     }
 
 
     view (class: [right, item]) {
-        Ok
+        :Ok
     }
 
     view (class: [right, item]) {
-        probably in like ten minutes
+        :probably in like ten minutes
     }
 }
