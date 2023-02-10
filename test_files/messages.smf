@@ -20,6 +20,7 @@ setup {
         right {
             backgroundColor: rgb(11, 132, 255)
             radius: rect(40px, 20px, 4px, 50px)
+            align: Center
         }
     }
 }

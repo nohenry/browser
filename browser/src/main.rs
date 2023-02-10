@@ -239,7 +239,10 @@ fn main() {
             execute!(
                 stdout,
                 MoveTo(1, 1 + line.get() as u16),
-                Print(format!("Content {} Padding {}", layout.content_rect, layout.padding_rect))
+                Print(format!(
+                    "Content {} Padding {}",
+                    layout.content_rect, layout.padding_rect
+                ))
             )
             .unwrap();
         }

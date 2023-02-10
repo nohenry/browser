@@ -402,12 +402,14 @@ impl Element {
                 let area = Rect::new(bounds.x0, bounds.y0 + rect.height(), bounds.x1, bounds.y1);
 
                 let area = node.element.layout(&node, area, depth + 1, document);
-                if area.width() as i32 > max_width {
-                    max_width = area.width() as i32;
+                if area.x1 as i32 > max_width {
+                    max_width = area.x1 as i32;
                 }
                 if fit {
                     if area.width() > rect.width() {
                         rect.x1 = rect.x0 + area.width();
+                    } else if area.x1 > rect.x1 {
+                        rect.x1 = area.x1
                     }
                 }
 
@@ -670,10 +672,10 @@ impl Element {
 
         let bounds = if let Some(border) = border_width {
             Rect::new(
-                area.x0 - border.x0,
-                area.y0 - border.y0,
-                area.x1 + border.x1,
-                area.y1 + border.y1,
+                bounds.x0 - border.x0,
+                bounds.y0 - border.y0,
+                bounds.x1 + border.x1,
+                bounds.y1 + border.y1,
             )
         } else {
             bounds
