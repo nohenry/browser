@@ -273,19 +273,23 @@ impl NodeDisplay for Node {
     }
 }
 
-impl TreeDisplay for Node {
+impl TreeDisplay<ID> for Node {
     fn num_children(&self) -> usize {
         self.children.len()
     }
 
-    fn child_at(&self, _index: usize) -> Option<&dyn TreeDisplay> {
+    fn child_at(&self, _index: usize) -> Option<&dyn TreeDisplay<ID>> {
         None
     }
 
-    fn child_at_bx<'a>(&'a self, index: usize) -> Box<dyn TreeDisplay + 'a> {
+    fn child_at_bx<'a>(&'a self, index: usize) -> Box<dyn TreeDisplay<ID> + 'a> {
         let p = self.children.iter().nth(index).unwrap().borrow();
 
         Box::new(p)
+    }
+
+    fn get_user_data(&self) -> Option<ID> {
+        Some(self.element.id) 
     }
 }
 
@@ -411,6 +415,7 @@ impl Element {
                 rect.y1 += area.height().round() + gap_pixels as f64
             }
             if let ChildSizing::Match = child_sizing {
+                // set layout for all children with max width
                 for child in node.children.iter() {
                     let node = child.borrow();
                     if !node.is_displayed() {
@@ -427,8 +432,6 @@ impl Element {
                     }
                     manager.set_layout_content(node.element.id, layout.content_rect);
                     manager.set_layout_border(node.element.id, layout.border_rect);
-                    // node.element.id
-                    // let area = node.element.layout(&node, rect, depth + 1, document);
                 }
             }
 
@@ -583,7 +586,7 @@ impl Element {
                 let area =
                     Rect::from_origin_size((bounds.x0, bounds.y0), (tl.width(), tl.height()));
 
-                let area = if let Some(Align::Right) = StyleValueAs!(
+                let area = match StyleValueAs!(
                     node.parent
                         .as_ref()
                         .unwrap()
@@ -591,9 +594,16 @@ impl Element {
                         .styles(document, "align"),
                     Align
                 ) {
-                    Rect::new(bounds.x1 - area.width(), area.y0, bounds.x1, area.y1)
-                } else {
-                    area
+                    Some(Align::Right) => {
+                        Rect::new(bounds.x1 - area.width(), area.y0, bounds.x1, area.y1)
+                    }
+                    Some(Align::Center) => Rect::new(
+                        bounds.x1 / 2.0 - area.width() / 2.0,
+                        area.y0,
+                        bounds.x1 / 2.0 + area.width() / 2.0,
+                        area.y1,
+                    ),
+                    _ => area,
                 };
                 // .map(|r| r.try_into().unwrap());
 
@@ -625,12 +635,24 @@ impl Element {
             _ => Rect::ZERO,
         };
 
-        let area = if let Some(Align::Right) = StyleValueAs!(node.styles(document, "align"), Align)
-        {
-            Rect::new(bounds.x1 - area.width(), area.y0, bounds.x1, area.y1)
-        } else {
-            area
+        let area = match StyleValueAs!(node.styles(document, "align"), Align) {
+            Some(Align::Right) => Rect::new(bounds.x1 - area.width(), area.y0, bounds.x1, area.y1),
+            Some(Align::Center) => Rect::new(
+                bounds.x1 / 2.0 - area.width() / 2.0,
+                area.y0,
+                bounds.x1 / 2.0 + area.width() / 2.0,
+                area.y1,
+            ),
+            _ => area,
         };
+
+        // let area = if let Some(Align::Right) = StyleValueAs!(node.styles(document, "align"), Align)
+        // {
+        //     Rect::new(bounds.x1 - area.width(), area.y0, bounds.x1, area.y1)
+        // } else {
+        //     area
+        // };
+        get_id_mgr().set_layout_padding(node.element.id, area);
 
         let bounds = if let Some(padding) = padding {
             Rect::new(

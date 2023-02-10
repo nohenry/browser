@@ -11,7 +11,7 @@ lazy_static::lazy_static! {
     };
 }
 
-pub(crate) fn get_id_mgr() -> MutexGuard<'static, IDManager> {
+pub fn get_id_mgr() -> MutexGuard<'static, IDManager> {
     ID_MANAGER.lock().unwrap()
 }
 
@@ -20,11 +20,13 @@ pub type ID = u64;
 #[derive(Debug, Clone, Copy)]
 pub struct Layout {
     pub content_rect: Rect,
+    pub padding_rect: Rect,
     pub border_rect: Rect,
 }
 
 pub const LAYOUT_ZERO: Layout = Layout {
     content_rect: Rect::ZERO,
+    padding_rect: Rect::ZERO,
     border_rect: Rect::ZERO,
 };
 
@@ -32,13 +34,14 @@ impl Default for Layout {
     fn default() -> Self {
         Self {
             content_rect: Rect::ZERO,
+            padding_rect: Rect::ZERO,
             border_rect: Rect::ZERO,
         }
     }
 }
 
 #[derive(Debug)]
-pub(crate) struct IDManager {
+pub struct IDManager {
     pub(crate) id_mappings: HashMap<ID, Layout>,
     next_id: ID,
 }
@@ -64,6 +67,7 @@ impl IDManager {
                 id,
                 Layout {
                     content_rect: layout,
+                    padding_rect: layout,
                     border_rect: layout,
                 },
             )
@@ -80,6 +84,24 @@ impl IDManager {
                 id,
                 Layout {
                     content_rect: layout,
+                    padding_rect: layout,
+                    border_rect: layout,
+                },
+            )
+        }
+    }
+
+    pub fn set_layout_padding(&mut self, id: ID, layout: Rect) -> Option<Layout> {
+        // println!("Setting border for {} {}", id, layout);
+        if let Some(full) = self.id_mappings.get_mut(&id) {
+            full.padding_rect = layout;
+            None
+        } else {
+            self.id_mappings.insert(
+                id,
+                Layout {
+                    content_rect: layout,
+                    padding_rect: layout,
                     border_rect: layout,
                 },
             )

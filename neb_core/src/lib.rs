@@ -8,7 +8,7 @@ pub mod node;
 
 pub mod defaults;
 
-mod ids;
+pub mod ids;
 
 pub mod styling;
 
