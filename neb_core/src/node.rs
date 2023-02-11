@@ -396,7 +396,6 @@ impl Element {
                 if !node.is_displayed() {
                     continue;
                 }
-                // dbg!(node.element.id);
 
                 // The bounds of the space that has not been taken up yet
                 let area = Rect::new(bounds.x0, bounds.y0 + rect.height(), bounds.x1, bounds.y1);
@@ -574,24 +573,34 @@ impl Element {
                     (Direction::HorizontalReverse, _) => layout_children_horizontally_rev(gap, fit),
                 };
 
-                let area = match StyleValueAs!(node.styles(document, "align"), Align) {
-                    Some(Align::Right) => {
-                        Rect::new(bounds.x1 - area.width(), area.y0, bounds.x1, area.y1)
-                    }
-                    Some(Align::Center) => Rect::new(
-                        bounds.width() / 2.0 - area.width() / 2.0 + bounds.x0,
-                        area.y0,
-                        bounds.width() / 2.0 + area.width() / 2.0 + bounds.x0,
-                        area.y1,
+                let (area, recalc) = match StyleValueAs!(node.styles(document, "align"), Align) {
+                    Some(Align::Right) => (
+                        Rect::new(bounds.x1 - area.width(), area.y0, bounds.x1, area.y1),
+                        true,
                     ),
-                    _ => area,
+                    Some(Align::Center) => (
+                        Rect::new(
+                            bounds.width() / 2.0 - area.width() / 2.0 + bounds.x0,
+                            area.y0,
+                            bounds.width() / 2.0 + area.width() / 2.0 + bounds.x0,
+                            area.y1,
+                        ),
+                        true,
+                    ),
+                    _ => (area, false),
                 };
 
-                let area = match (direction, align) {
-                    (Direction::Vertical, _) => layout_children_vertically(&area, gap, fit),
-                    (Direction::VerticalReverse, _) => layout_children_vertically_rev(gap, fit),
-                    (Direction::Horizontal, _) => layout_children_horizontally(gap, fit),
-                    (Direction::HorizontalReverse, _) => layout_children_horizontally_rev(gap, fit),
+                let area = if recalc {
+                    match (direction, align) {
+                        (Direction::Vertical, _) => layout_children_vertically(&area, gap, fit),
+                        (Direction::VerticalReverse, _) => layout_children_vertically_rev(gap, fit),
+                        (Direction::Horizontal, _) => layout_children_horizontally(gap, fit),
+                        (Direction::HorizontalReverse, _) => {
+                            layout_children_horizontally_rev(gap, fit)
+                        }
+                    }
+                } else {
+                    area
                 };
 
                 area
@@ -611,32 +620,6 @@ impl Element {
                 let area =
                     Rect::from_origin_size((bounds.x0, bounds.y0), (tl.width(), tl.height()));
 
-                // let area = match StyleValueAs!(
-                //     node.parent
-                //         .as_ref()
-                //         .unwrap()
-                //         .borrow()
-                //         .styles(document, "align"),
-                //     Align
-                // ) {
-                //     Some(Align::Right) => {
-                //         Rect::new(bounds.x1 - area.width(), area.y0, bounds.x1, area.y1)
-                //     }
-                //     Some(Align::Center) => Rect::new(
-                //         bounds.width() / 2.0 - area.width() / 2.0 + bounds.x0,
-                //         area.y0,
-                //         bounds.width() / 2.0 + area.width() / 2.0 + bounds.x0,
-                //         area.y1,
-                //     ),
-                //     _ => area,
-                // };
-                // .map(|r| r.try_into().unwrap());
-
-                // let x_offset = match align {
-                //     Some(TextAlign::Center) => tl.width() / 2.0,
-                //     Some(TextAlign::Left) => 0.0,
-                //     _ => 0.0,
-                // };
                 area
             }
             NodeType::Root => {

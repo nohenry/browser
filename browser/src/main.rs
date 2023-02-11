@@ -2,14 +2,18 @@ use std::{
     fs::File,
     io::{BufReader, Stdout, Write},
     num::NonZeroU32,
+    path::PathBuf,
     process::exit,
     rc::Rc,
+    str::FromStr,
     sync::{
         mpsc::{self, Receiver, Sender},
         Arc, RwLock,
     },
 };
 
+use args::BrowserArgs;
+use clap::Parser;
 use crossterm::{
     cursor::{Hide, MoveTo, Show},
     event::{read, KeyCode, KeyEvent, KeyEventKind, KeyEventState},
@@ -28,6 +32,8 @@ use neb_core::{
 
 use neb_util::format::TreeDisplay;
 
+mod args;
+
 pub struct State {
     debug_id: Option<ID>,
     debug_line: Option<NonZeroU32>,
@@ -35,7 +41,14 @@ pub struct State {
 
 fn main() {
     env_logger::init();
-    let file = File::open("test_files/messages.smf").unwrap();
+
+    let args = BrowserArgs::parse();
+
+    let file = File::open(
+        args.view
+            .unwrap_or(PathBuf::from_str("test_files/messages.smf").unwrap()),
+    )
+    .unwrap();
     let file = BufReader::new(file);
 
     let document = Arc::new(parse_from_stream(file));
@@ -64,127 +77,129 @@ fn main() {
         exit(0)
     }));
 
-    std::thread::spawn(move || {
-        let tx = Rc::new(tx);
-        crossterm::terminal::enable_raw_mode().unwrap();
+    if args.debug_inspector {
+        std::thread::spawn(move || {
+            let tx = Rc::new(tx);
+            crossterm::terminal::enable_raw_mode().unwrap();
 
-        let mut stdout = std::io::stdout();
+            let mut stdout = std::io::stdout();
 
-        queue!(stdout, EnterAlternateScreen, Hide).unwrap();
+            queue!(stdout, EnterAlternateScreen, Hide).unwrap();
 
-        stdout.flush().unwrap();
-
-        let i = Rc::new(RwLock::new(0));
-
-        let print = |stdout: &mut Stdout,
-                     value: Rc<RwLock<u32>>,
-                     index: u32,
-                     on_selection: Rc<Box<dyn Fn(u64)>>| {
-            let st = io_doc
-                .get_body()
-                .borrow()
-                .format_unformat(Box::new(move |element, c| {
-                    let res = {
-                        let i = value.read().unwrap();
-                        if *i == index {
-                            (*on_selection)(element.get_user_data().unwrap());
-                            Some(format!("{}", c.black().on_white()))
-                        } else {
-                            None
-                        }
-                    };
-
-                    {
-                        let mut i = value.write().unwrap();
-                        *i += 1;
-                    }
-
-                    res
-                }));
-            let lines = st.split("\n");
-            for (y, line) in lines.enumerate() {
-                queue!(stdout, MoveTo(1, y as _), Print(line.to_string())).unwrap();
-            }
-        };
-
-        let mut index = 0;
-
-        // let src = max.clone();
-
-        {
-            let tx = tx.clone();
-            let fui = i.clone();
-            print(
-                &mut stdout,
-                fui,
-                index,
-                Rc::new(Box::new(move |value: u64| {
-                    tx.send((value, 0)).unwrap();
-                })),
-            );
             stdout.flush().unwrap();
-        }
-        // Rc
 
-        let max = Rc::new(*i.read().unwrap());
-        let src = Rc::clone(&max);
-        let select: Rc<Box<dyn Fn(u64)>> = Rc::new(Box::new(move |value: u64| {
-            tx.send((value, *src)).unwrap();
-        }));
+            let i = Rc::new(RwLock::new(0));
 
-        loop {
-            // `read()` blocks until an `Event` is available
-            match read().unwrap() {
-                crossterm::event::Event::Key(KeyEvent {
-                    code: KeyCode::Char('q') | KeyCode::Esc,
-                    ..
-                }) => {
-                    stdout.flush().unwrap();
-                    execute!(stdout, Show, LeaveAlternateScreen).unwrap();
+            let print = |stdout: &mut Stdout,
+                         value: Rc<RwLock<u32>>,
+                         index: u32,
+                         on_selection: Rc<Box<dyn Fn(u64)>>| {
+                let st = io_doc
+                    .get_body()
+                    .borrow()
+                    .format_unformat(Box::new(move |element, c| {
+                        let res = {
+                            let i = value.read().unwrap();
+                            if *i == index {
+                                (*on_selection)(element.get_user_data().unwrap());
+                                Some(format!("{}", c.black().on_white()))
+                            } else {
+                                None
+                            }
+                        };
 
-                    crossterm::terminal::disable_raw_mode().unwrap();
+                        {
+                            let mut i = value.write().unwrap();
+                            *i += 1;
+                        }
 
-                    std::process::exit(0);
+                        res
+                    }));
+                let lines = st.split("\n");
+                for (y, line) in lines.enumerate() {
+                    queue!(stdout, MoveTo(1, y as _), Print(line.to_string())).unwrap();
                 }
+            };
 
-                crossterm::event::Event::Key(KeyEvent {
-                    code: KeyCode::Up,
-                    kind: KeyEventKind::Press,
-                    ..
-                }) => {
-                    {
-                        let mut i = i.write().unwrap();
-                        *i = 0;
-                    }
-                    if index > 0 {
-                        let fui = i.clone();
-                        index -= 1;
-                        print(&mut stdout, fui, index, select.clone());
+            let mut index = 0;
 
-                        stdout.flush().unwrap();
-                    }
-                }
-                crossterm::event::Event::Key(KeyEvent {
-                    code: KeyCode::Down,
-                    kind: KeyEventKind::Press,
-                    ..
-                }) => {
-                    {
-                        let mut i = i.write().unwrap();
-                        *i = 0;
-                    }
-                    if index < *max - 1 {
-                        let fui = i.clone();
-                        index += 1;
-                        print(&mut stdout, fui, index, select.clone());
-                        stdout.flush().unwrap();
-                    }
-                }
-                // crossterm::event::Event::Key(event) => println!("{:?}", event),
-                _ => (),
+            // let src = max.clone();
+
+            {
+                let tx = tx.clone();
+                let fui = i.clone();
+                print(
+                    &mut stdout,
+                    fui,
+                    index,
+                    Rc::new(Box::new(move |value: u64| {
+                        tx.send((value, 0)).unwrap();
+                    })),
+                );
+                stdout.flush().unwrap();
             }
-        }
-    });
+            // Rc
+
+            let max = Rc::new(*i.read().unwrap());
+            let src = Rc::clone(&max);
+            let select: Rc<Box<dyn Fn(u64)>> = Rc::new(Box::new(move |value: u64| {
+                tx.send((value, *src)).unwrap();
+            }));
+
+            loop {
+                // `read()` blocks until an `Event` is available
+                match read().unwrap() {
+                    crossterm::event::Event::Key(KeyEvent {
+                        code: KeyCode::Char('q') | KeyCode::Esc,
+                        ..
+                    }) => {
+                        stdout.flush().unwrap();
+                        execute!(stdout, Show, LeaveAlternateScreen).unwrap();
+
+                        crossterm::terminal::disable_raw_mode().unwrap();
+
+                        std::process::exit(0);
+                    }
+
+                    crossterm::event::Event::Key(KeyEvent {
+                        code: KeyCode::Up,
+                        kind: KeyEventKind::Press,
+                        ..
+                    }) => {
+                        {
+                            let mut i = i.write().unwrap();
+                            *i = 0;
+                        }
+                        if index > 0 {
+                            let fui = i.clone();
+                            index -= 1;
+                            print(&mut stdout, fui, index, select.clone());
+
+                            stdout.flush().unwrap();
+                        }
+                    }
+                    crossterm::event::Event::Key(KeyEvent {
+                        code: KeyCode::Down,
+                        kind: KeyEventKind::Press,
+                        ..
+                    }) => {
+                        {
+                            let mut i = i.write().unwrap();
+                            *i = 0;
+                        }
+                        if index < *max - 1 {
+                            let fui = i.clone();
+                            index += 1;
+                            print(&mut stdout, fui, index, select.clone());
+                            stdout.flush().unwrap();
+                        }
+                    }
+                    // crossterm::event::Event::Key(event) => println!("{:?}", event),
+                    _ => (),
+                }
+            }
+        });
+    }
 
     let state = Arc::new(RwLock::new(State {
         debug_id: None,
@@ -196,13 +211,15 @@ fn main() {
 
         document.draw(builder);
 
-        match rx.try_recv() {
-            Ok(val) => {
-                let mut m = state.write().unwrap();
-                m.debug_id = Some(val.0);
-                m.debug_line = NonZeroU32::new(val.1)
+        if args.debug_inspector {
+            match rx.try_recv() {
+                Ok(val) => {
+                    let mut m = state.write().unwrap();
+                    m.debug_id = Some(val.0);
+                    m.debug_line = NonZeroU32::new(val.1)
+                }
+                _ => (),
             }
-            _ => (),
         }
 
         let m = state.read().unwrap();

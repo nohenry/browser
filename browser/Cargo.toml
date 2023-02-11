@@ -11,6 +11,7 @@ colored = "*"
 env_logger = "*"
 neb_core = { path = "../neb_core" }
 neb_util = { path = "../neb_util" }
+clap = { version = "*", features = ["derive"] }
 
 pollster = "*"
 rustyline = "10.1.1"
