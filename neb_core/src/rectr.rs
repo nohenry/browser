@@ -149,6 +149,7 @@ impl Shape for RoundedRect {
 
         // Note: order follows the rectangle path iterator.
         let arcs = [
+            // Top left
             build_arc_iter(
                 2,
                 Point {
@@ -157,9 +158,10 @@ impl Shape for RoundedRect {
                 },
                 Vec2 {
                     x: radii.top_left - (self.center_rect.x0 - self.rect.x0).abs(),
-                    y: radii.top_left - (self.center_rect.x0 - self.rect.x0).abs(),
+                    y: radii.top_left - (self.center_rect.y0 - self.rect.y0).abs(),
                 },
             ),
+            // Top right
             build_arc_iter(
                 3,
                 Point {
@@ -171,6 +173,7 @@ impl Shape for RoundedRect {
                     y: radii.top_right - (self.center_rect.y0 - self.rect.y0).abs(),
                 },
             ),
+            // Bottom right
             build_arc_iter(
                 0,
                 Point {
@@ -182,6 +185,7 @@ impl Shape for RoundedRect {
                     y: radii.bottom_right - (self.center_rect.y1 - self.rect.y1).abs(),
                 },
             ),
+            // Bottom left
             build_arc_iter(
                 1,
                 Point {

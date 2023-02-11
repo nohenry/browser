@@ -4,7 +4,7 @@ use neb_graphics::{
     drawing_context::DrawingContext,
     simple_text,
     vello::{
-        kurbo::{Affine, Rect, RoundedRectRadii},
+        kurbo::{Affine, Rect, RoundedRect, RoundedRectRadii},
         peniko::{Brush, Stroke},
     },
 };
@@ -14,7 +14,7 @@ use neb_smf::{
 };
 
 use crate::{
-    rectr::RoundedRect,
+    // rectr::RoundedRect,
     styling::{Align, ChildSizing, Direction},
     StyleValueAs,
 };
@@ -643,7 +643,8 @@ impl Element {
             _ => Rect::ZERO,
         };
 
-        get_id_mgr().set_layout_padding(node.element.id, area);
+        // Set the bounds of the foreground content
+        get_id_mgr().set_layout_content_rect(node.element.id, area);
 
         let bounds = if let Some(padding) = padding {
             Rect::new(
@@ -656,8 +657,8 @@ impl Element {
             area
         };
 
-        // Set the content bounds. This is used for drawing a background for the content with a border
-        get_id_mgr().set_layout_content(node.element.id, bounds);
+        // Cache the padding bounds. Used for drawing a background color and border radius
+        get_id_mgr().set_layout_padding_rect(node.element.id, bounds);
 
         let bounds = if let Some(border) = border_width {
             Rect::new(
@@ -670,8 +671,8 @@ impl Element {
             bounds
         };
 
-        // Set the border bounds; the physical area that the border takes up. This bounds is used or drawing the border color
-        get_id_mgr().set_layout_border(node.element.id, bounds);
+        // Set the border bounds; the total area that the border takes up. This bounds is used or drawing the border color
+        get_id_mgr().set_layout_border_rect(node.element.id, bounds);
 
         bounds
     }
@@ -686,8 +687,7 @@ impl Element {
         let background_color =
             StyleValueAs!(node.styles(document, "backgroundColor"), BackgroundColor);
         let border_color = StyleValueAs!(node.styles(document, "borderColor"), BorderColor);
-        let border_width =
-            StyleValueAs!(node.styles(document, "borderWidth"), BorderWidth).unwrap_or_default();
+        let border_width = StyleValueAs!(node.styles(document, "borderWidth"), BorderWidth);
 
         let foreground_color =
             StyleValueAs!(node.styles(document, "foregroundColor"), ForegroundColor);
@@ -703,75 +703,114 @@ impl Element {
 
         let radius: Option<RoundedRectRadii> = radius.map(|rad| rad.try_into().unwrap());
 
-        if let Some(color) = border_color {
-            // If we have a radius, draw it instead
-            if let Some(radius) = radius {
-                let _rounded = RoundedRect::from_rect(layout.border_rect, radius);
-                // dctx.builder.fill(
-                //     neb_graphics::vello::peniko::Fill::NonZero,
-                //     Affine::IDENTITY,
-                //     color,
-                //     None,
-                //     &rounded,
-                // );
+        let radius = if let Some(radius) = radius {
+            // Only allow the content to have a radius if the radius is larger than the border width
+            Some(if let Some(w) = border_width {
+                let w: Rect = w.try_into().unwrap();
+                RoundedRectRadii::new(
+                    if radius.top_left > w.x0 && radius.top_left > w.y0 {
+                        radius.top_left
+                    } else {
+                        0.0
+                    },
+                    if radius.top_right > w.x1 && radius.top_right > w.y0 {
+                        radius.top_right
+                    } else {
+                        0.0
+                    },
+                    if radius.bottom_right > w.x1 && radius.bottom_right > w.y1 {
+                        radius.bottom_right
+                    } else {
+                        0.0
+                    },
+                    if radius.bottom_left > w.x0 && radius.bottom_left > w.y0 {
+                        radius.bottom_left
+                    } else {
+                        0.0
+                    },
+                )
             } else {
-                // let width = match border_width {
-                //     UnitValue::Pixels(p) => p,
-                // };
-                let r: Rect = border_width.try_into().unwrap();
-                // No radius
-                dctx.builder.stroke(
-                    &Stroke::new(r.x0 as _),
-                    Affine::IDENTITY,
-                    color,
-                    None,
-                    &layout.border_rect,
-                );
-                // dctx.builder.fill(
-                //     neb_graphics::vello::peniko::Fill::NonZero,
-                //     Affine::IDENTITY,
-                //     color,
-                //     None,
-                //     &layout.border_rect,
-                // );
+                radius
+            })
+        } else {
+            None
+        };
+
+        // let border_width: Rect = border_width.try_into().unwrap();
+
+        match (border_color, background_color) {
+            // If we have a background color, then we can draw border as rectangle
+            (Some(color), Some(_)) => {
+                // If we have a radius, draw it instead
+                if let Some(radius) = radius {
+                    let mut rounded = RoundedRect::from_rect(layout.border_rect, radius);
+
+                    dctx.builder.fill(
+                        neb_graphics::vello::peniko::Fill::NonZero,
+                        Affine::IDENTITY,
+                        color,
+                        None,
+                        &rounded,
+                    );
+                } else {
+                    if let Some(border_width) = border_width {
+                        // No radius
+                        dctx.builder.fill(
+                            neb_graphics::vello::peniko::Fill::NonZero,
+                            Affine::IDENTITY,
+                            color,
+                            None,
+                            &layout.border_rect,
+                        );
+                    }
+                }
             }
+            // If no background, we have to stroke
+            // TODO: maybe these can be combined into just a single stroke?
+            (Some(color), None) => {
+                if let Some(border_width) = border_width {
+                    let w: Rect = border_width.try_into().unwrap();
+                    if let Some(radius) = radius {
+                        let mut rounded = RoundedRect::from_rect(layout.border_rect, radius);
+
+                        dctx.builder.stroke(
+                            &Stroke::new(w.x0 as _),
+                            Affine::IDENTITY,
+                            color,
+                            None,
+                            &rounded,
+                        );
+                    } else {
+                        // No radius
+                        dctx.builder.stroke(
+                            &Stroke::new(w.x0 as _),
+                            Affine::IDENTITY,
+                            color,
+                            None,
+                            &layout.border_rect,
+                        );
+                    }
+                }
+            }
+            _ => (),
         }
 
         if let Some(color) = background_color {
             if let Some(radius) = radius {
-                let border_width = StyleValueAs!(node.styles(document, "borderWidth"), BorderWidth);
-
-                // Only allow the content to have a radius if the radius is larger than the border width
-                let radius = if let Some(w) = border_width {
-                    let w: Rect = w.try_into().unwrap();
-                    RoundedRectRadii::new(
-                        if radius.top_left > w.x0 && radius.top_left > w.y0 {
-                            radius.top_left
-                        } else {
-                            0.0
-                        },
-                        if radius.top_right > w.x1 && radius.top_right > w.y0 {
-                            radius.top_left
-                        } else {
-                            0.0
-                        },
-                        if radius.bottom_right > w.x1 && radius.bottom_right > w.y1 {
-                            radius.top_left
-                        } else {
-                            0.0
-                        },
-                        if radius.bottom_left > w.x0 && radius.bottom_left > w.y0 {
-                            radius.top_left
-                        } else {
-                            0.0
-                        },
-                    )
+                let w = if let Some(border_width) = border_width {
+                    let w: Rect = border_width.try_into().unwrap();
+                    w
                 } else {
-                    radius
+                    Rect::ZERO
                 };
+                let p = RoundedRectRadii::new(
+                    radius.top_left - w.x0,
+                    radius.top_right - w.y0,
+                    radius.bottom_right - w.x1,
+                    radius.bottom_right - w.y1,
+                );
 
-                let mut rounded = RoundedRect::from_rect(layout.content_rect, radius);
-                rounded.set_center(layout.border_rect);
+                let mut rounded = RoundedRect::from_rect(layout.padding_rect, p);
 
                 dctx.builder.fill(
                     neb_graphics::vello::peniko::Fill::NonZero,
@@ -787,7 +826,7 @@ impl Element {
                     Affine::IDENTITY,
                     color,
                     None,
-                    &layout.content_rect,
+                    &layout.padding_rect,
                 );
             }
         }
@@ -851,9 +890,9 @@ impl Element {
                     None,
                     psize!(defaults::TEXT_SIZE),
                     Some(&Brush::Solid(parent_foreground_color)),
-                    Affine::translate((layout.content_rect.x0, layout.content_rect.y0)),
+                    Affine::translate((layout.padding_rect.x0, layout.padding_rect.y0)),
                     t,
-                    &layout.content_rect,
+                    &layout.padding_rect,
                 );
             }
             _ => (),

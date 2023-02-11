@@ -229,20 +229,29 @@ fn main() {
             let layout = idmgr.get_layout(*val);
 
             builder.builder.stroke(
-                &Stroke::new(1.0),
+                &Stroke::new(2.0),
                 Affine::IDENTITY,
-                &Brush::Solid(Color::RED),
+                &Brush::Solid(Color::rgb8(255, 0, 0)),
+                None,
+                &layout.content_rect,
+                // Line::new(Point::new(layout.content_rect., y), p1),
+            );
+
+            builder.builder.stroke(
+                &Stroke::new(1.5),
+                Affine::IDENTITY,
+                &Brush::Solid(Color::rgb8(0, 255, 0)),
                 None,
                 &layout.padding_rect,
                 // Line::new(Point::new(layout.content_rect., y), p1),
             );
 
             builder.builder.stroke(
-                &Stroke::new(2.0),
+                &Stroke::new(1.0),
                 Affine::IDENTITY,
-                &Brush::Solid(Color::GREEN),
+                &Brush::Solid(Color::rgb8(0, 0, 255)),
                 None,
-                &layout.content_rect,
+                &layout.border_rect,
                 // Line::new(Point::new(layout.content_rect., y), p1),
             );
         }
@@ -256,8 +265,8 @@ fn main() {
                 stdout,
                 MoveTo(1, 1 + line.get() as u16),
                 Print(format!(
-                    "Content {} Padding {}",
-                    layout.content_rect, layout.padding_rect
+                    "Content {}, Padding {}, Border {}",
+                    layout.content_rect, layout.padding_rect, layout.border_rect
                 ))
             )
             .unwrap();
