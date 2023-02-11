@@ -12,7 +12,7 @@ use std::{
 
 use crossterm::{
     cursor::{Hide, MoveTo, Show},
-    event::{read, KeyCode, KeyEvent},
+    event::{read, KeyCode, KeyEvent, KeyEventKind, KeyEventState},
     execute, queue,
     style::{Print, Stylize},
     terminal::{EnterAlternateScreen, LeaveAlternateScreen},
@@ -70,12 +70,7 @@ fn main() {
 
         let mut stdout = std::io::stdout();
 
-        queue!(
-            stdout,
-            EnterAlternateScreen, // enter alternate screen
-            Hide                  // hide the cursor
-        )
-        .unwrap();
+        queue!(stdout, EnterAlternateScreen, Hide).unwrap();
 
         stdout.flush().unwrap();
 
@@ -141,7 +136,7 @@ fn main() {
             // `read()` blocks until an `Event` is available
             match read().unwrap() {
                 crossterm::event::Event::Key(KeyEvent {
-                    code: KeyCode::Char('q'),
+                    code: KeyCode::Char('q') | KeyCode::Esc,
                     ..
                 }) => {
                     stdout.flush().unwrap();
@@ -153,7 +148,9 @@ fn main() {
                 }
 
                 crossterm::event::Event::Key(KeyEvent {
-                    code: KeyCode::Up, ..
+                    code: KeyCode::Up,
+                    kind: KeyEventKind::Press,
+                    ..
                 }) => {
                     {
                         let mut i = i.write().unwrap();
@@ -163,11 +160,13 @@ fn main() {
                         let fui = i.clone();
                         index -= 1;
                         print(&mut stdout, fui, index, select.clone());
+
                         stdout.flush().unwrap();
                     }
                 }
                 crossterm::event::Event::Key(KeyEvent {
                     code: KeyCode::Down,
+                    kind: KeyEventKind::Press,
                     ..
                 }) => {
                     {

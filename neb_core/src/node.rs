@@ -289,7 +289,7 @@ impl TreeDisplay<ID> for Node {
     }
 
     fn get_user_data(&self) -> Option<ID> {
-        Some(self.element.id) 
+        Some(self.element.id)
     }
 }
 
@@ -376,7 +376,7 @@ impl Element {
         };
 
         // Lays out child nodes in a stack
-        let layout_children_vertically = |gap: UnitValue, fit: bool| {
+        let layout_children_vertically = |bounds: &Rect, gap: UnitValue, fit: bool| {
             // Start the bounds from top up (bounds.y0)
             let mut rect = Rect::new(
                 bounds.x0,
@@ -424,16 +424,18 @@ impl Element {
                         continue;
                     }
 
-                    let mut manager = get_id_mgr();
-                    let mut layout = *manager.get_layout(node.element.id);
-                    if max_width > layout.content_rect.width() as i32 {
-                        layout.content_rect.x1 +=
-                            (max_width - layout.content_rect.width() as i32) as f64;
-                        layout.border_rect.x1 +=
-                            (max_width - layout.border_rect.width() as i32) as f64;
-                    }
-                    manager.set_layout_content(node.element.id, layout.content_rect);
-                    manager.set_layout_border(node.element.id, layout.border_rect);
+                    node.element.layout(&node, rect, depth + 1, document);
+
+                    // let mut manager = get_id_mgr();
+                    // let mut layout = *manager.get_layout(node.element.id);
+                    // if max_width > layout.content_rect.width() as i32 {
+                    //     layout.content_rect.x1 +=
+                    //         (max_width - layout.content_rect.width() as i32) as f64;
+                    //     layout.border_rect.x1 +=
+                    //         (max_width - layout.border_rect.width() as i32) as f64;
+                    // }
+                    // manager.set_layout_content(node.element.id, layout.content_rect);
+                    // manager.set_layout_border(node.element.id, layout.border_rect);
                 }
             }
 
@@ -565,13 +567,34 @@ impl Element {
 
                 let align = StyleValueAs!(node.styles(document, "align"), Align);
 
-                match (direction, align) {
-                    (Direction::Vertical, _) => layout_children_vertically(gap, fit),
+                let area = match (direction, align) {
+                    (Direction::Vertical, _) => layout_children_vertically(&bounds, gap, fit),
                     (Direction::VerticalReverse, _) => layout_children_vertically_rev(gap, fit),
-                    // (Direction::Horizontal, Some(Align::Right)) => layout_children_horizontally_rev(gap, fit),
                     (Direction::Horizontal, _) => layout_children_horizontally(gap, fit),
                     (Direction::HorizontalReverse, _) => layout_children_horizontally_rev(gap, fit),
-                }
+                };
+
+                let area = match StyleValueAs!(node.styles(document, "align"), Align) {
+                    Some(Align::Right) => {
+                        Rect::new(bounds.x1 - area.width(), area.y0, bounds.x1, area.y1)
+                    }
+                    Some(Align::Center) => Rect::new(
+                        bounds.width() / 2.0 - area.width() / 2.0 + bounds.x0,
+                        area.y0,
+                        bounds.width() / 2.0 + area.width() / 2.0 + bounds.x0,
+                        area.y1,
+                    ),
+                    _ => area,
+                };
+
+                let area = match (direction, align) {
+                    (Direction::Vertical, _) => layout_children_vertically(&area, gap, fit),
+                    (Direction::VerticalReverse, _) => layout_children_vertically_rev(gap, fit),
+                    (Direction::Horizontal, _) => layout_children_horizontally(gap, fit),
+                    (Direction::HorizontalReverse, _) => layout_children_horizontally_rev(gap, fit),
+                };
+
+                area
             }
             // SymbolKind::Node { args }
             // NodeType::Svg(svg) => {
@@ -583,30 +606,30 @@ impl Element {
             // }
             NodeType::Text(t) => {
                 let mut simple_text = simple_text::SimpleText::new();
-                let tl = simple_text.layout(None, psize!(defaults::TEXT_SIZE), t);
+                let tl = simple_text.layout(None, psize!(defaults::TEXT_SIZE), t, &bounds);
 
                 let area =
                     Rect::from_origin_size((bounds.x0, bounds.y0), (tl.width(), tl.height()));
 
-                let area = match StyleValueAs!(
-                    node.parent
-                        .as_ref()
-                        .unwrap()
-                        .borrow()
-                        .styles(document, "align"),
-                    Align
-                ) {
-                    Some(Align::Right) => {
-                        Rect::new(bounds.x1 - area.width(), area.y0, bounds.x1, area.y1)
-                    }
-                    Some(Align::Center) => Rect::new(
-                        bounds.x1 / 2.0 - area.width() / 2.0,
-                        area.y0,
-                        bounds.x1 / 2.0 + area.width() / 2.0,
-                        area.y1,
-                    ),
-                    _ => area,
-                };
+                // let area = match StyleValueAs!(
+                //     node.parent
+                //         .as_ref()
+                //         .unwrap()
+                //         .borrow()
+                //         .styles(document, "align"),
+                //     Align
+                // ) {
+                //     Some(Align::Right) => {
+                //         Rect::new(bounds.x1 - area.width(), area.y0, bounds.x1, area.y1)
+                //     }
+                //     Some(Align::Center) => Rect::new(
+                //         bounds.width() / 2.0 - area.width() / 2.0 + bounds.x0,
+                //         area.y0,
+                //         bounds.width() / 2.0 + area.width() / 2.0 + bounds.x0,
+                //         area.y1,
+                //     ),
+                //     _ => area,
+                // };
                 // .map(|r| r.try_into().unwrap());
 
                 // let x_offset = match align {
@@ -625,7 +648,7 @@ impl Element {
 
                 let fit = false;
                 match direction {
-                    Direction::Vertical => layout_children_vertically(gap, fit),
+                    Direction::Vertical => layout_children_vertically(&bounds, gap, fit),
                     Direction::VerticalReverse => layout_children_vertically_rev(gap, fit),
                     Direction::Horizontal => layout_children_horizontally(gap, fit),
                     Direction::HorizontalReverse => layout_children_horizontally_rev(gap, fit),
@@ -637,23 +660,6 @@ impl Element {
             _ => Rect::ZERO,
         };
 
-        let area = match StyleValueAs!(node.styles(document, "align"), Align) {
-            Some(Align::Right) => Rect::new(bounds.x1 - area.width(), area.y0, bounds.x1, area.y1),
-            Some(Align::Center) => Rect::new(
-                bounds.x1 / 2.0 - area.width() / 2.0,
-                area.y0,
-                bounds.x1 / 2.0 + area.width() / 2.0,
-                area.y1,
-            ),
-            _ => area,
-        };
-
-        // let area = if let Some(Align::Right) = StyleValueAs!(node.styles(document, "align"), Align)
-        // {
-        //     Rect::new(bounds.x1 - area.width(), area.y0, bounds.x1, area.y1)
-        // } else {
-        //     area
-        // };
         get_id_mgr().set_layout_padding(node.element.id, area);
 
         let bounds = if let Some(padding) = padding {
@@ -864,6 +870,7 @@ impl Element {
                     Some(&Brush::Solid(parent_foreground_color)),
                     Affine::translate((layout.content_rect.x0, layout.content_rect.y0)),
                     t,
+                    &layout.content_rect,
                 );
             }
             _ => (),
