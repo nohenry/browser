@@ -125,7 +125,7 @@ fn rect_all_form_iter<'a>(mut iter: impl Iterator<Item = &'a Value>) -> Option<U
 impl StyleValue {
     fn build_function(key: &str, func: &str, args: &ElementArgs) -> StyleValue {
         match func {
-            "rgb" => {
+            "rgb" | "rgba" => {
                 let Some(color) = color_from_iter(args.iter_values()) else {
                     return StyleValue::Empty
                 };

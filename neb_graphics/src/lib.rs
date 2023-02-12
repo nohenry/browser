@@ -34,8 +34,6 @@ pub async fn start_graphics_thread(draw: impl Fn(&mut DrawingContext) + 'static)
     let device_handle = &render_cx.devices[surface.dev_id];
     let mut renderer = Renderer::new(&device_handle.device)?;
 
-    // let mut simple_text = simple_text::SimpleText::new();
-
     let mut scene = Scene::default();
 
     event_loop.run(move |event, _, control_flow| match event {
@@ -82,10 +80,12 @@ pub async fn start_graphics_thread(draw: impl Fn(&mut DrawingContext) + 'static)
             draw(&mut dctx);
 
             dctx.builder.finish();
+
             let surface_texture = surface
                 .surface
                 .get_current_texture()
                 .expect("failed to get surface texture");
+
             renderer
                 .render_to_surface(
                     &device_handle.device,
@@ -96,8 +96,8 @@ pub async fn start_graphics_thread(draw: impl Fn(&mut DrawingContext) + 'static)
                     height,
                 )
                 .expect("failed to render to surface");
+            
             surface_texture.present();
-            // render_cx.device.poll(wgpu::Maintain::Wait);
             device_handle.device.poll(wgpu::Maintain::Wait);
         }
         _ => {}

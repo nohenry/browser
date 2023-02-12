@@ -580,9 +580,9 @@ impl Element {
                     ),
                     Some(Align::Center) => (
                         Rect::new(
-                            bounds.width() / 2.0 - area.width() / 2.0 + bounds.x0,
+                            (bounds.width() / 2.0 - area.width() / 2.0 + bounds.x0).round(),
                             area.y0,
-                            bounds.width() / 2.0 + area.width() / 2.0 + bounds.x0,
+                            (bounds.width() / 2.0 + area.width() / 2.0 + bounds.x0).round(),
                             area.y1,
                         ),
                         true,
@@ -736,8 +736,6 @@ impl Element {
             None
         };
 
-        // let border_width: Rect = border_width.try_into().unwrap();
-
         match (border_color, background_color) {
             // If we have a background color, then we can draw border as rectangle
             (Some(color), Some(_)) => {
@@ -810,19 +808,25 @@ impl Element {
                     radius.bottom_right - w.y1,
                 );
 
-                let mut rounded = RoundedRect::from_rect(layout.padding_rect, p);
+                // let pp = Rect::new(
+                //     layout.padding_rect.x0 + 0.5,
+                //     layout.padding_rect.y0,
+                //     layout.padding_rect.x1,
+                //     layout.padding_rect.y1,
+                // );
+                let mut rounded = RoundedRect::from_rect(layout.padding_rect, radius);
 
                 dctx.builder.fill(
-                    neb_graphics::vello::peniko::Fill::NonZero,
+                    neb_graphics::vello::peniko::Fill::EvenOdd,
                     Affine::IDENTITY,
                     color,
                     None,
                     &rounded,
                 );
             } else {
-                // No radius
+
                 dctx.builder.fill(
-                    neb_graphics::vello::peniko::Fill::NonZero,
+                    neb_graphics::vello::peniko::Fill::EvenOdd,
                     Affine::IDENTITY,
                     color,
                     None,
@@ -842,8 +846,6 @@ impl Element {
         } else {
             foreground_color
         };
-
-        // let node = node.borrow();
 
         match &node.ty {
             // _ => ()

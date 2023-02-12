@@ -10,11 +10,10 @@ setup {
             padding: rect_xy(20px, 4px)
             foregroundColor: rgb(255, 255, 255)
             textAlign: Center
-            borderWidth: rect_all(2px)
-            borderColor: rgb(255, 0, 0)
         }
 
         left {
+            backgroundColor: rgb(59, 59, 61)
             radius: rect(40px, 40px, 40px, 40px)
         }
 
